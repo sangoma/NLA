@@ -61,8 +61,6 @@ while read line; do
         echo "${loglist[@]}"
         echo
 
-        # keep track of the number of files
-        ((count++))
 
         # keep track of number of wavs (i.e. if there are multiples for a given call log)
         # wavs=($(gawk 'BEGIN { ORS="\n"} /wav/ { print $0; printf("%c", "") }'| sort <<< "${loglist[@]}"))
@@ -80,6 +78,9 @@ while read line; do
             echo -e "\t${wavs[@]}"
             echo
             newname="${wavs[0]/$re/}"
+
+            # keep track of the number of files
+            ((count++))
 
         fi
 
@@ -164,17 +165,21 @@ while read line; do
     fi
     unset loglist
     unset wavs
+    unset sorted_wavlist
+    unset infile
 done < $csvfile
 
 # filter csv to skip title and field names
 linecount="$(gawk '/\,/ { if(NR == 2){next}; count++ } END { print count}' $csvfile )"
 echo
-echo "number of files found = $count"
+echo "number of files found with wavs = $count"
 echo "line count in provided csv file '$csvfile' is $linecount"
 echo
 unset count
 
 cp $csvfile "$sa_package_dir/cpa-stats.csv"
+cp $csvfile "$new_dataset_dir/cpa-stats.csv"
+
 cd $sa_package_dir
 if (( z == 1 )); then
     echo "zipping up package..."
