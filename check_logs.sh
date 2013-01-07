@@ -49,7 +49,7 @@ while read line; do
 
     # strip everything after the first delimiter (comma) 
     # and use for search pattern
-    pat="${line%,2012*}"
+    pat="${line%,2013*}"
     echo
     echo "looking for $pat ..."
 
@@ -144,11 +144,11 @@ while read line; do
 
             # concat multiple files for stats analyzer
             echo "first sox"
-            sox -S ${combine_flag} $infile ${sa_package_dir}/${newname#./}
+            sox ${combine_flag} $infile ${sa_package_dir}/${newname#./}
 
             echo "2nd sox"
             # convert audio to linear for cpe offline tool
-            sox -S ${combine_flag} ${infile/\.\//} -b 16 -e signed "${new_dataset_dir}/${outfile}"
+            sox ${combine_flag} ${infile/\.\//} -b 16 -e signed "${new_dataset_dir}/${outfile}"
 
         else
             # this probably doesn't work currently
