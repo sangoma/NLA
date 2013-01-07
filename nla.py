@@ -1,8 +1,8 @@
-#!/usr/bin/python2
+#!/usr/bin/python
 # a tool for analyzing NCA logs - NCA Log Analyzer
-# this is the front end tool which should be run on a cpa-stats package
+# this is the front end script which should be run on a cpa-stats package
 
-# TODO: 
+# TODO:
 # -implement front end logfile segmenter
 # -implement stats computation
 # -implement xml parser
@@ -17,7 +17,7 @@ def usage():
     """help function"""
     explanation = "This tool parse the NCE stats file for and provides a disposition summary and conducts log segmentation by classification\n"
     print("Usage: ./nla.py <cpa-stats.csv>\n" + explanation)
-      
+
 # parse the cpa-stats.csv file
 # def main(argv):
 # main(sys.argv)
@@ -52,4 +52,3 @@ cs = CallSet(args[0], "bt")
 # for row in cs.reader:
     # s += 1
 # print("there are " + str(s) + " records in the stats file")
-

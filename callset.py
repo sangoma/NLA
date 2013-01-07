@@ -3,92 +3,101 @@
 import time
 import datetime
 import csv
+import subprocess
 
 class CallSet(object):
     def __init__(self, csv_file, callset_id):
         self._id = callset_id
-        self.length = 0
+        # self.length = 0
 
         # try to open csv file and return a reader/iterator
         try:
             print("opening csv file: '" + csv_file + "'")
             print("assigning callset id: '" + str(callset_id) + "'")
-            
-            csv_buffer = open(csv_file, newline='')
 
-            #TODO: add a csv sniffer here to determine a dialect
-# default delimiter=','
-            self._reader = csv.reader(csv_buffer) 
+            csv_buffer = open(csv_file)#, newline='')
 
-            # first line should be the title
-            self._title = next(self._reader)
-            # second line should be the field names
-            fields = next(self._reader)
+            # TODO: add a csv sniffer here to determine a dialect
+            # NOTE: default delimiter = ','
+            self._reader = csv.reader(csv_buffer)
 
-            indices = [i for i in range(len(fields))]
+            self._title = next(self._reader)    # first line should be the title
+            self._fields = next(self._reader)   # second line should be the field names
 
-            # create list of tuples : ( index, field element)
-            self._fields = list(zip(indices, fields))
+            # create a list of indices
+            self._indices = [i for i in range(len(self._fields))]
+            self.width = len(self._indices)
 
-            # build out data set
-            # self._buildlist()
-            self._rows = [row for row in self._reader]
+            # compile call list entries
+            # self._entries = [row for row in self._reader]
+            self._buildlist()
+            self.length = len(self._entries)
 
-            # self._buildset()
-
-            # query user if they would like to scan the logs
-            # self._scanlogs
+            print("creating call set...")
+            print ("'" + self.__class__.__name__ + "' object:  created!")
 
         except csv.Error as err:
             print('file %s, line %d: %s' % (csv_buffer, self._reader.line_num, err))
             print("Error:", exc)
             sys.exit(1)
 
-    # def _buildset(self):
-    # """csv.reader, list of fields -> list of dicts = csv rows"""
-        # use a list comprehension to generate our entries
-            
     def _buildlist(self):
-    # """csv.reader, list of fields -> list of dicts = csv rows"""
-        self._row = []
+        """csv.reader, list of fields -> list of dicts = csv rows"""
+        self._entries = []
+        self._destinations = set()     # set of phone numbers
+        self.num_dup_dest = 0
+        phone_index = self._fields.index('Phone Number')
 
         # build a list of csv/call entries
+        print("compiling logs index...")
         for entry in self._reader:
-            # self.line_num = self._reader.line_num
 
-            # d = list(zip(self._fields, entry))
-            e = entry
-            lf = len(self.fields)
-            le = len(entry)
-            if lf < le:
-                # store overloaded fields in CallSet.restkey
-                d[self.restkey] = entry[lf:]
-            elif lf > le:
-                for key in self.fields[le:]:
-                    d[key] = None
-            self._row.append(d)
-            # del d -> should this be here?
+            self._line_num = self._reader.line_num
 
-        # record the length of the set
-        self.length = len(self._row)
+            # if we've already seen this phone number then skip the entry
+            if entry[phone_index] in self._destinations:
+                self.num_dup_dest += 1
+                next
+            else:
+                # add destination phone number to our set
+                self._destinations.add(entry[phone_index])
+
+                try:
+                    # search for log files using call-id field
+                    logs = subprocess.check_output(["find", "./", "-regex", "^.*" + entry[0] + ".*"])
+                    # entry.append(tuple(list(logs)))
+                except subprocess.CalledProcessError as e:
+                    print("find failed with output: " + e.output)
+
+                self._entries.append(entry)
+
+                del entry
+
+                # d = list(zip(self._fields, entry))
+                # e = entry
+                # lf = len(self.fields)
+                # le = len(entry)
+                # if lf < le:
+                #     # store overloaded fields in CallSet.restkey
+                #     d[self.restkey] = entry[lf:]
+                # elif lf > le:
+                #     for key in self.fields[le:]:
+                #         d[key] = None
 
 
-    def _scan_logs(self, logdir):
+    def _scan_logs(self, logdir='./'):
     #TODO: 
-    # check for logs for each entry
-    # report errors if logs not found etc.
-    # search for logs in pwd and/or pointed dir
+    # check for logs for each entry report errors if logs not found etc.
+    # search in pwd and/or pointed dir
         return None
-        
-    @property
-    def row(self, row_number):
-        """Access to the csv reader"""
-        return self._rows[row_number]
 
-    @property
-    def dict_reader(self):
-        """Access to the csv reader"""
-        return self._reader
+    def _compute_stats(self):
+        return None
+
+    # @property
+    # def dict_reader(self):
+    #     """Access to the csv reader"""
+    #     return self._reader
 
     @property
     def id(self):
@@ -102,8 +111,24 @@ class CallSet(object):
 
     @property
     def fields(self):
-        # save the second row as the field names
-        return self._fields
+        # create list of tuples : ( index, field element)
+        fields = list(zip(self._indices, self._fields))
+        return fields
+
+    def row(self, row_number):
+        """Access a row in readable form"""
+        # e = entry
+        # lf = len(self.fields)
+        # le = len(entry)
+        # if lf < le:
+        #     # store overloaded fields in CallSet.restkey
+        #     d[self.restkey] = entry[lf:]
+        # elif lf > le:
+        #     for key in self.fields[le:]:
+        #         d[key] = None
+        # self._row.append(d)
+        readable_row = list(zip(self._indices, self._fields, self._entries[row_number]))
+        return readable_row
 
     def write(self):
         """Access to the csv writer"""
@@ -111,12 +136,9 @@ class CallSet(object):
         print("this would write your new logs package")
         return None
 
-    # filter closure
-    def filter(predicate):
-    # """filter applied to a predicate and a list returns the list of those elements that satisfy the predicate"""
-    # should work where you call filter(remove(key="result"))
-        return None
-
+    # filter generator?
+    # def filter(self, predicate=lambda ls: ls[11].next() ==  value: return ls.next()  ):
+    #     return filter(predicate, self._rows)
 
     # if not cpaVersionManager.isSupported(self.__cpaVersion):
       # raise cpaVersionManager.VersionNotSupported(self.__cpaVersion)
