@@ -4,14 +4,20 @@
 import sqlite3 as lite
 import getopt
 import sys
+import subprocess
 
-# get sys args
-argv = sys.argv
+# config
+human_file = "human.txt"
+machine_file = "machine.txt"
 
 def usage():
     """help function"""
-    explanation = "This tool scrapes the Stats-analyzer squlite3 database for calls marked as HUMAN and MACHINE and prints the call-ids in text files for later processing\n"
+    explanation = "This tool scrapes the Stats-analyzer squlite3 database for\
+    calls marked as HUMAN and MACHINE and prints the call-ids in text files for later processing\n"
     print("Usage: db_scrape.py <sqlite3 db file>\n" + explanation)
+
+# get sys args
+argv = sys.argv
 
 # parse options
 try:
@@ -35,12 +41,13 @@ for opt in optlist:
         continue
 
 if len(args) == 0:
-    sys.exit("Error: You must specify a sqlite3 database file as your first argument!")
+    sys.exit(usage())
 
 elif len(args) > 2:
     print("Error: excess args '%s ...'" % args[0])
     sys.exit(usage())
 
+# setup db connection
 db = args[0]
 con = lite.connect(db)
 
@@ -50,7 +57,7 @@ with con:
     cur.execute('SELECT SQLITE_VERSION()')
 
     data = cur.fetchone()
-    print "SQLite version: %s" % data                
+    print("using SQLite version: %s" % data)
     print("scraping db entries...")
 
     cur.execute('SELECT paraxipcallId FROM processedCpaCall where expectedResults = 1')
@@ -61,18 +68,26 @@ with con:
     cur.execute('SELECT paraxipcallId FROM processedCpaCall where expectedResults = 2')
     machines = cur.fetchall()
 
-with open("human.txt", "w") as f:
-    for entry in humans:
-        data = f.write()
-    # cur.execute('SELECT * FROM processedCpaCall')
-    # a = cur.fetchall()
-    # print "all are:\n %s" % a
-    
 # except lite.Error, e:
-
 #     print "Error %s:" % e.args[0]
 #     sys.exit(1)
-
 # finally:
     # if con:
     #     con.close()
+
+# write cid files for parsing by audio annotator
+print("writing " + human_file + "...")
+with open(human_file, 'w') as f:
+    for entry in humans:
+        data = f.write(entry[0] + "\n")
+    print(str(data) + " written")
+    del data
+
+print("writing " + machine_file + "...")
+with open(machine_file, 'w') as f:
+    for entry in machines:
+        data = f.write(entry[0] + "\n")
+    print(str(data) + " written")
+    del data
+
+# subprocess.call("xargs <infile> blah blah blah")
