@@ -21,12 +21,14 @@ import getopt
 import string as str
 import sys
 from subprocess import *
-import csv
 import shutil
 import os
 
+# query for package name
+print("Enter the name of the new package you'd like to generate (HINT: it's the dir name)")
+package_dir = raw_input()
+
 # output files
-package_dir = "to_annotate_package"
 bm_test_list = "test.audioset"
 human_file = os.path.join(package_dir, 'human.audioset')
 machine_file = os.path.join(package_dir,"machine.audioset")
@@ -37,7 +39,7 @@ fax_file = os.path.join(package_dir, "fax.audioset")
 
 def usage():
     """help function"""
-    print("\nUsage: db_scrape.py <sqlite3 db file (*.callset)> <logs dir to find wav and xml files>\n\n"
+    print("\nUsage:" + sys.argv[0] + " <sqlite3 db file (*.callset)> <logs dir to find wav and xml files>\n\n"
          "This tool scrapes the Stats-analyzer sqlite3 database for calls marked as HUMAN, MACHINE and FAX.\n"
          "It prints the call-ids in text files for later processing by the nca annotation tool.\n")
 
@@ -56,38 +58,43 @@ def gen_annotate_package(filename, result_class, query_list):
         f = open(filename, 'w')
         for entry in query_list:
 
-            # search logs for files
+            # search logs for files corresponding to cid scraped from db
             found = Popen(["find", search_dir, "-regex", "^.*" + entry[0] + ".*"], stdout=PIPE).communicate()[0]
             
             # split into a list
             logs = found.split('\n')
             
+            # loop through the files found from the logs with that cid
             for entry in logs:
 
                 filename, extension = os.path.splitext(entry)
                 name = os.path.basename(entry)
                     
+                if result_class == "human":
+                    # flag the padded files
+                    name = "zeropad-" + name
+
+                path_to_file = '/'.join([package_dir, name])
+
+                # if it's a wave file
                 if extension == ".wav" :
 
                     if result_class == "human":
-                        # flag the padded files
-                        name = "zeropad-" + name
-                        print("padding : " + name)
-                        path_to_file = '/'.join([package_dir, name])
-
                         # pad the human wave files with 3 seconds of silence
+                        # and output to package dir
+                        # print("padding : " + name)
                         retcode = call(["sox", entry, path_to_file, "pad", "0", "3"]) 
 
                     else:
-                        path_to_file = '/'.join([package_dir, name])
+
                         shutil.copyfile(entry, path_to_file) 
 
                     # write the xargs parsible file
-                    f.write(path_to_file + "\n")
+                    f.write(name + "\n")
 
+                # if it's a log file
                 elif extension:
 
-                    path_to_file = '/'.join([package_dir, name])
                     shutil.copyfile(entry, path_to_file) 
 
                 else:
