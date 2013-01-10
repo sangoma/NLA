@@ -34,9 +34,6 @@ human_file = os.path.join(package_dir, 'human.audioset')
 machine_file = os.path.join(package_dir,"machine.audioset")
 fax_file = os.path.join(package_dir, "fax.audioset")
 
-# annotator path
-# annotator = "/mnt/iscsi/wc/nca-2.0-maint/bin/netborder_x86_64-linux_gcc34/netborder-add-audio-annotation"
-
 def usage():
     """help function"""
     print("\nUsage:" + sys.argv[0] + " <sqlite3 db file (*.callset)> <logs dir to find wav and xml files>\n\n"
@@ -189,91 +186,6 @@ gen_annotate_package(fax_file, "fax", fax)
 print("\nall listing files are located in new package prepped for auto-annotation -> '" + package_dir + "'")
 
 sys.exit()
-
-# # write the '.audioset' files for parsing by audio annotator
-# print("writing " + human_file)
-# try:
-#     # f = open('/'.join([search_dir, human_file]), 'w')
-#     f = open(human_file, 'w')
-#     for entry in humans:
-
-#         # search logs for files
-#         found = Popen(["find", search_dir, "-regex", "^.*" + entry[0] + ".*"], stdout=PIPE).communicate()[0]
-        
-#         # split into a list
-#         logs = found.split('\n')
-        
-#         # print(type(logs))
-#         # print(logs)
-#         for entry in logs:
-
-#             filename, extension = os.path.splitext(entry)
-#             name = os.path.basename(entry)
-#             # print(extension)
-#             # print("entry = %s" % entry)
-#             # print(type(entry))
-#             if extension == ".wav":
-
-#                 # wav = os.path.basename(entry)
-#                 # wav = entry.split('/')
-#                 # padded = "pad-" + wav[-1]
-
-#                 # flag the padded files
-#                 name = "zeropad-" + name
-#                 # padded = "zeropad-" + name
-#                 print(name)
-
-#                 path_to_file = '/'.join([package_dir, name])
-#                 # sox pad the human wave files
-#                 retcode = call(["sox", entry, path_to_file, "pad", "0", "3"]) 
-
-#                 # write the xargs parsible file
-#                 f.write(path_to_file + "\n")
-
-#             elif extension:
-#                 # name = entry.split('/')[-1]
-
-#                 path_to_file = '/'.join([package_dir, name])
-#                 shutil.copyfile(entry, path_to_file) 
-
-#             else:
-#                 next
-
-
-        # wav = glob.glob(
-
-        # wavs = Popen(["find", search_dir, "-regex", "^.*" + entry[0] + ".*wav.*"], stdout=PIPE).communicate()[0]
-        # print("output = " + output)
-        # wave = str.lstrip(output, chars='./')
-        # wave = str.rstrip(output)
-        # wave = str.join(['./', output])
-        # print("wave = " + wave)
-        # sys.exit()
-        # sox pad human calls with 3 seconds silence
-        # retcode = call(["sox", wave, wave, "pad", "0", "3"])
-
-# finally:
-#     f.close()
-
-print("writing " + machine_file)
-try:
-    f = open('/'.join([search_dir,machine_file]), 'w')
-    for entry in machines:
-		output = Popen(["find", search_dir, "-regex", "^.*" + entry[0] + ".*wav.*"], stdout=PIPE).communicate()[0]
-		f.write(output)
-
-finally:
-    f.close()
-
-print("writing " + fax_file)
-try:
-    f = open('/'.join([search_dir,fax_file]), 'w')
-    for entry in fax:
-		output = Popen(["find", search_dir, "-regex", "^.*" + entry[0] + ".*wav.*"], stdout=PIPE).communicate()[0]
-		f.write(output)
-
-finally:
-    f.close()
 
 # # annotate files using 1000 second start/end regions
 # print("start annotating " + human_file + "...")
