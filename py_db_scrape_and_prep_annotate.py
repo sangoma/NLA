@@ -1,5 +1,7 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# vim: tabstop=4 softtabstop=4 shiftwidth=4 textwidth=80 smarttab expandtab
+#
 # Tyler Goodlet tgoodlet@sangoma.com -- initial version
 # scrape out the results from the stats-analyzer hack fest,
 # annotate the log files (now with the tool on the nca build machine)
@@ -10,15 +12,14 @@
 # - a set of sqlite database files from the stats-analyzer (*.s3db, *.callset)
 
 # Comments:
-# welcome to bullshit castle where we break up a simple process into as
-# many scripts as possible because for some reason people think it's
+# welcome to bs castle where we break up a simple process into as
+# many scripts as possible because for some reason "people" think it's
 # a good idea to build software on CentOS 5.7 where sox does not yet
-# have the 'pad' option thus making my life living hell and causing me
-# to nearly insane as I get closer and closer to the cliff's edge...
+# have the 'pad' option thus causing me to go nearly insane as I get 
+# closer and closer to the cliff's edge...
 
 import sqlite3 as lite
 import getopt
-import string as str
 import sys
 from subprocess import *
 import shutil
