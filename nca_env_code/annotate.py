@@ -29,9 +29,8 @@ annotator = "/mnt/iscsi/wc/nca-2.0-maint/bin/netborder_x86_64-linux_gcc34/netbor
 def usage():
     """help function"""
 # TODO: make this not shit!
-    explanation = "This tool scrapes the Stats-analyzer squlite3 database for \
-    calls marked as HUMAN and MACHINE and prints the call-ids in text files for later processing\n"
-    print("Usage: db_scrape.py <sqlite3 db file>\n" + explanation)
+    print("\nUsage: cd <directory with audioset files and logs>; /path/to/annotate.py ./\n"
+    "This tool annotates wave files as HUMAN and MACHINE as instructed in human.audioset type files\n"
 
 # get sys args
 argv = sys.argv

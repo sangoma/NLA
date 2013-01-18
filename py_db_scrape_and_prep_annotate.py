@@ -25,15 +25,6 @@ from subprocess import *
 import shutil
 import os
 
-# query for package name
-print("Enter the name of the new package you'd like to generate (HINT: it's the dir name)")
-package_dir = raw_input()
-
-# output files
-bm_test_list = "test.audioset"
-human_file = os.path.join(package_dir, 'human.audioset')
-machine_file = os.path.join(package_dir,"machine.audioset")
-fax_file = os.path.join(package_dir, "fax.audioset")
 
 def usage():
     """help function"""
@@ -58,16 +49,16 @@ def gen_annotate_package(filename, result_class, query_list):
 
             # search logs for files corresponding to cid scraped from db
             found = Popen(["find", search_dir, "-regex", "^.*" + entry[0] + ".*"], stdout=PIPE).communicate()[0]
-            
+
             # split into a list
             logs = found.split('\n')
-            
+
             # loop through the files found from the logs with that cid
             for entry in logs:
 
                 filename, extension = os.path.splitext(entry)
                 name = os.path.basename(entry)
-                    
+
                 if result_class == "human":
                     # flag the padded files
                     name = "zeropad-" + name
@@ -113,7 +104,7 @@ try:
     (optlist, args) = getopt.gnu_getopt(argv[1:], "h:s:", ("help","stats"))
 
 except getopt.GetoptError, exc:
-    print("Error:" +  exc)
+    print("Error:" +  str(exc))
     sys.exit(usage())
 
 for opt in optlist:
@@ -138,6 +129,16 @@ elif len(args) < 2:
 elif len(args) > 2:
     print("Error: excess args '%s ...'" % args[0])
     sys.exit(usage())
+
+# query for package name
+print("Enter the name of the new package you'd like to generate (HINT: it's the dir name)")
+package_dir = raw_input()
+
+# output files
+bm_test_list = "test.audioset"
+human_file = os.path.join(package_dir, 'human.audioset')
+machine_file = os.path.join(package_dir,"machine.audioset")
+fax_file = os.path.join(package_dir, "fax.audioset")
 
 # get the db and package directory
 db = args[0]
