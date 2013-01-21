@@ -18,13 +18,12 @@
 # have the 'pad' option thus causing me to go nearly insane as I get 
 # closer and closer to the cliff's edge...
 
-import sqlite3 as lite
-import getopt
-import sys
-from subprocess import *
-import shutil
 import os
-
+import sys
+import getopt
+import shutil
+from subprocess import *
+import sqlite3 as lite
 
 def usage():
     """help function"""
@@ -173,7 +172,7 @@ except lite.Error, e:
     sys.exit(1)
 
 if con:
-	con.close()
+    con.close()
 
 
 # make sure output package dir exists
