@@ -6,14 +6,15 @@ import csv
 import subprocess
 
 class CallSet(object):
+
     def __init__(self, csv_file, callset_id):
         self._id = callset_id
         # self.length = 0
 
         # try to open csv file and return a reader/iterator
         try:
-            print("opening csv file: '" + csv_file + "'")
             print("assigning callset id: '" + str(callset_id) + "'")
+            print("opening csv file: '" + csv_file + "'")
 
             csv_buffer = open(csv_file)#, newline='')
 
@@ -21,30 +22,31 @@ class CallSet(object):
             # NOTE: default delimiter = ','
             self._reader = csv.reader(csv_buffer)
 
-            self._title = next(self._reader)    # first line should be the title
-            self._fields = next(self._reader)   # second line should be the field names
-
-            # create a list of indices
-            self._indices = [i for i in range(len(self._fields))]
-            self.width = len(self._indices)
-
             # compile call list entries
             # self._entries = [row for row in self._reader]
-            self._buildlist()
+            self._buildset(self._reader)
             self.length = len(self._entries)
 
             print("creating call set...")
-            print ("'" + self.__class__.__name__ + "' object:  created!")
+            print ("" + self.__class__.__name__ + " object:  created!")
 
         except csv.Error as err:
             print('file %s, line %d: %s' % (csv_buffer, self._reader.line_num, err))
             print("Error:", exc)
             sys.exit(1)
 
-    def _buildlist(self):
-        """csv.reader, list of fields -> list of dicts = csv rows"""
+    def _buildset(self, csv_reader):
+        """iterate the csv.reader to build a set of call entries"""
+
+        self._title = next(self._reader)    # first line should be the title
+        self._fields = next(self._reader)   # second line should be the field names
+
+        # create a list of indices
+        self._indices = [i for i in range(len(self._fields))]
+        self.width = len(self._indices)
+
         self._entries = []
-        self._destinations = set()     # set of phone numbers
+        self._destinations = set()     # the set of phone numbers / destinations
         self.num_dup_dest = 0
         phone_index = self._fields.index('Phone Number')
 
@@ -64,14 +66,17 @@ class CallSet(object):
 
                 try:
                     # search for log files using call-id field
-                    logs = subprocess.check_output(["find", "./", "-regex", "^.*" + entry[0] + ".*"])
-                    # entry.append(tuple(list(logs)))
+                    logs = self._scan_logs(entry[0])
+
                 except subprocess.CalledProcessError as e:
                     print("find failed with output: " + e.output)
 
                 self._entries.append(entry)
 
                 del entry
+
+        # notify the number of duplicate calls to a single callee
+        print("number of duplicate destinations = " + str(self.num_dup_dest))
 
                 # d = list(zip(self._fields, entry))
                 # e = entry
@@ -85,11 +90,11 @@ class CallSet(object):
                 #         d[key] = None
 
 
-    def _scan_logs(self, logdir='./'):
-    #TODO: 
+    def _scan_logs(self, re_literal, logdir='./'):
     # check for logs for each entry report errors if logs not found etc.
-    # search in pwd and/or pointed dir
-        return None
+        # TODO: use os.walk here instead of subprocess
+        logs = subprocess.check_output(["find", logdir, "-regex", "^.*" + re_literal + ".*"])
+        return logs
 
     def _compute_stats(self):
         return None
@@ -117,6 +122,7 @@ class CallSet(object):
 
     def row(self, row_number):
         """Access a row in readable form"""
+        # TODO: eventually make this print pretty in ipython
         # e = entry
         # lf = len(self.fields)
         # le = len(entry)

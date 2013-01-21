@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 # a tool for analyzing NCA logs - NCA Log Analyzer
 # this is the front end script which should be run on a cpa-stats package
 
@@ -46,7 +46,7 @@ elif len(args) > 2:
     sys.exit(usage())
 
 # create a callset interface
-cs = CallSet(args[0], "bt")
+cs = CallSet(args[0], "base")
 
 # s = 0
 # for row in cs.reader:
