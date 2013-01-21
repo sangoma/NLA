@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 # vim: tabstop=4 softtabstop=4 shiftwidth=4 textwidth=80 smarttab expandtab
 import sys, os, shutil, subprocess
@@ -34,7 +34,7 @@ argv = sys.argv
 try:
     (optlist, args) = getopt.gnu_getopt(argv[1:], "h:s:", ("help","stats"))
 
-except getopt.GetoptError, exc:
+except getopt.GetoptError as exc:
     print("Error:" +  exc)
     sys.exit(usage())
 
