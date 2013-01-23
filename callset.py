@@ -8,24 +8,30 @@ import subprocess
 class CallSet(object):
 
     def __init__(self, csv_file, callset_id):
+
         self._id = callset_id
-        # self.length = 0
+        self.num_dup_dest = 0
+        self._destinations = set()
+
+        print("assigning callset id: '" + str(callset_id) + "'")
 
         # try to open csv file and return a reader/iterator
+        print("opening csv file: '" + csv_file + "'")
         try:
-            print("assigning callset id: '" + str(callset_id) + "'")
-            print("opening csv file: '" + csv_file + "'")
+            with open(csv_file) as csv_buffer:
 
-            csv_buffer = open(csv_file)#, newline='')
+                # TODO: add a csv sniffer here to determine a dialect
+                # NOTE: default delimiter = ','
+                self._reader = csv.reader(csv_buffer)
 
-            # TODO: add a csv sniffer here to determine a dialect
-            # NOTE: default delimiter = ','
-            self._reader = csv.reader(csv_buffer)
+                # compile call list entries
+                print("compiling logs index...")
+                self._buildset(self._reader)
+                # self._entries = [row for row in self._reader]
+                self.length = len(self._entries)
 
-            # compile call list entries
-            # self._entries = [row for row in self._reader]
-            self._buildset(self._reader)
-            self.length = len(self._entries)
+            # notify the number of duplicate calls to a single callee
+            print("number of duplicate destinations = " + str(self.num_dup_dest))
 
             print("creating call set...")
             print ("" + self.__class__.__name__ + " object:  created!")
@@ -36,25 +42,29 @@ class CallSet(object):
             sys.exit(1)
 
     def _buildset(self, csv_reader):
-        """iterate the csv.reader to build a set of call entries"""
+        """iterate the csv.reader iterable to build a set of call entries"""
 
-        self._title = next(self._reader)    # first line should be the title
-        self._fields = next(self._reader)   # second line should be the field names
+        self._title = next(csv_reader)    # first line should be the title
+        self._fields = next(csv_reader)   # second line should be the field names
+        self._entries = []
+
+        # get special indices
+        cid_index = self._fields.index('Netborder Call-id')
+        phone_index = self._fields.index('Phone Number')
+
+        # create a destination db?
+        # (the new set of phone numbers / destinations)
+        if self._destinations is None:
+            self._destinations = set()
 
         # create a list of indices
         self._indices = [i for i in range(len(self._fields))]
         self.width = len(self._indices)
 
-        self._entries = []
-        self._destinations = set()     # the set of phone numbers / destinations
-        self.num_dup_dest = 0
-        phone_index = self._fields.index('Phone Number')
-
         # build a list of csv/call entries
-        print("compiling logs index...")
-        for entry in self._reader:
+        for entry in csv_reader:
 
-            self._line_num = self._reader.line_num
+            self._line_num = csv_reader.line_num
 
             # if we've already seen this phone number then skip the entry
             if entry[phone_index] in self._destinations:
@@ -66,17 +76,14 @@ class CallSet(object):
 
                 try:
                     # search for log files using call-id field
-                    logs = self._scan_logs(entry[0])
+                    logs = self._scan_logs(entry[cid_index])
+                    if logs is None:
+                        print("WARNING: no log files found!?")
 
                 except subprocess.CalledProcessError as e:
-                    print("find failed with output: " + e.output)
+                    print("'find' failed with output: " + e.output)
 
                 self._entries.append(entry)
-
-                del entry
-
-        # notify the number of duplicate calls to a single callee
-        print("number of duplicate destinations = " + str(self.num_dup_dest))
 
                 # d = list(zip(self._fields, entry))
                 # e = entry
