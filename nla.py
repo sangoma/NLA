@@ -11,12 +11,15 @@
 
 import sys
 import getopt
-from callset import CallSet
+from callset import *
 
 def usage():
     """help function"""
-    explanation = "This tool parse the NCE stats file for and provides a disposition summary and conducts log segmentation by classification\n"
-    print("Usage: ./nla.py <cpa-stats.csv>\n" + explanation)
+    print("This tool parses an NCA log package, provides a disposition "
+          "summary and conducts log segmentation by classification.\n"
+          "It relies heavily on ipython for practical use to "
+          "efficiently analyze a log set\n\n"
+          "Usage: ./nla.py <cpa-stats.csv> <call-logs directory name>\n")
 
 # parse the cpa-stats.csv file
 # def main(argv):
@@ -38,15 +41,16 @@ for opt in optlist:
         print("enabled statistics!")
         continue
 
-if len(args) == 0:
-    sys.exit("Error: You must specify a cpa-stats.csv file as your first argument!")
+if len(args) < 2:
+    print("Error: not enough arguments!\n")
+    sys.exit(usage())
 
 elif len(args) > 2:
     print("Error: excess args '%s ...'" % args[0])
     sys.exit(usage())
 
 # create a callset interface
-cs = CallSet(args[0], "base")
+cs = CallSet(args[0], args[1], "base")
 
 # s = 0
 # for row in cs.reader:
