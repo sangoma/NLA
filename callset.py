@@ -30,8 +30,7 @@ def slice(start, stop):
     return lambda lst: lst[start:stop]
 
 # select specific fields from an iterable
-# this function will usually be mapped over the parent
-# container/iterable
+# this function will usually be mapped over the parent container/iterable
 def field_select(index_lst):
     return lambda lst: [lst[index] for index in index_lst]
 
@@ -138,10 +137,11 @@ class CallSet(object):
         self._phone_index = self._fields.index(phone_num)
         self._result_index = self._fields.index(nca_result)
         self._detail_result_index = self._fields.index(det_nca_result)
-        self._human_readable_fields = [self._cid_index, self._result_index, self._detail_result_index]
+        # self._human_readable_fields = [self._cid_index, self._result_index, self._detail_result_index]
 
         # filter for fields of interest
-        self._ffoi = field_select(self._human_readable_fields)
+        # self._ffoi = field_select(self._human_readable_fields)
+        self.print_pretty = printer(field_select([self._cid_index, self._result_index, self._detail_result_index]))
 
         # note the number of duplicate calls to a single callee
         print("number of duplicate destinations = " + str(self.num_dup_dest))
@@ -190,21 +190,32 @@ class CallSet(object):
     @property
     def AM(self):
         ams = am_f(self._entries)
-        am_readable = map(self._ffoi, ams)
+        # am_readable = map(self._ffoi, ams)
         # for entry in am_readable:
-        print_table(zip(index_iter(len(am_readable)),am_readable))
+        self.print_pretty(ams)
         # for entry in iterable:
         #     print(entry)
         # return strain(iterable)
 
 # Utility functions
-def print_table(table):
+def printer(field_selection):
+    def printer_function(table):
+        fs_table = map(field_selection, table)
+        index = 0
+        for row in fs_table:  # here a table is normally a list of lists
+            print('{0:5}'.format(str(index)), '|', end='')
+            print('|'.join('{col:^{l}}'.format(col=column, l=len(str(column)) + 4) for column in row))
+            # print('|'.join('{col:^30}'.format(col=column) for column in row))
+            index += 1
+    return printer_function
+
+def print_table(table, field_selection=None):
     index = 0
     for row in table:  # here a table is normally a list of lists
-        # print('|'.join(['{0:<{l}} '.format(str(index), l=len(str(index)) + 2), '|'.join('{col:^30}'.format(col=column) for column in row)]))
-        print('|'.join('{col:^30}'.format(col=column) for column in row))
+        print('{0:5}'.format(str(index)), '|', end='')
+        print('|'.join('{col:^{l}}'.format(col=column, l=len(str(column)) + 4) for column in row))
+        # print('|'.join('{col:^30}'.format(col=column) for column in row))
         index += 1
-    # print('-'.join('  {0:<{field_width}}'.format(column, field_width=len(column) + 2) for column in row))
 
 def scan_logs(re_literal, logdir='./', method='find'):
     # TODO: use os.walk here instead of subprocess
