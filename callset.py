@@ -11,6 +11,8 @@ import datetime
 import csv
 import subprocess
 import matplotlib as mpl
+import os
+import sys
 
 # important field strings
 cid            = 'Netborder Call-id'
@@ -63,7 +65,6 @@ def add_package(callset, csv_file, logs_dir):
         with open(csv_file) as csv_buffer:
 
             # TODO: add a csv sniffer here to determine a dialect?
-            # default delimiter for nca = ','
             csv_reader = csv.reader(csv_buffer)
 
             callset._title = next(csv_reader)    # first line should be the title
@@ -102,6 +103,9 @@ def add_package(callset, csv_file, logs_dir):
                         if len(logs) == 0:
                             print("WARNING no log files found for cid :",entry[cid_index])
                             callset.num_cid_unfound += 1
+                        else:
+                            callset._log_paths[entry[cid_index]] = LogPaths(logs)
+
 
                     except subprocess.CalledProcessError as e:
                         print("scanning logs failed with output: " + e.output)
@@ -112,6 +116,27 @@ def add_package(callset, csv_file, logs_dir):
         print('file %s, line %d: %s' % (csv_buffer, callset._reader.line_num, err))
         print("Error:", exc)
         sys.exit(1)
+
+class LogPaths(object):
+
+    def __init__(self, logs_list):
+        self.wavs = []
+        self.logs = []
+
+        for path in logs_list:
+            # assign properties by extension
+            filename, extension = os.path.splitext(path)
+            if extension == b".log":
+                self.logs.append(path)
+
+            elif extension == b".xml":
+                self.xml = path
+
+            elif extension == b'.wav':
+                self.wavs.append(path)
+
+        self.wavs.sort()
+        # sys.exit()
 
 # class to operate on and describe a callset
 class CallSet(object):
@@ -125,9 +150,9 @@ class CallSet(object):
 
         self._entries = []
         self._destinations = set()
+        self._log_paths = {}
 
         #TODO: dynamically generate properties based on results content
-        self._results = {}                # dict of results
 
         add_package(self, csv_file, logs_dir)
         self.length = len(self._entries)
@@ -156,7 +181,11 @@ class CallSet(object):
         readable_row = list(zip(self._indices, self._fields, self._entries[row_number]))
         return readable_row
 
+    def add_pkg(self, csv_file, logs_dir):
+        add_package(self, csv_file, logs_dir)
+
     def stats(self):
+
         return None
 
     def write(self):
@@ -190,12 +219,7 @@ class CallSet(object):
     @property
     def AM(self):
         ams = am_f(self._entries)
-        # am_readable = map(self._ffoi, ams)
-        # for entry in am_readable:
         self.print_pretty(ams)
-        # for entry in iterable:
-        #     print(entry)
-        # return strain(iterable)
 
 # Utility functions
 def printer(field_selection):
@@ -204,8 +228,8 @@ def printer(field_selection):
         index = 0
         for row in fs_table:  # here a table is normally a list of lists
             print('{0:5}'.format(str(index)), '|', end='')
-            print('|'.join('{col:^{l}}'.format(col=column, l=len(str(column)) + 4) for column in row))
-            # print('|'.join('{col:^30}'.format(col=column) for column in row))
+            # print('|'.join('{col:^{l}}'.format(col=column, l=len(str(column)) + 4) for column in row))
+            print('|'.join('{col:^30}'.format(col=column) for column in row))
             index += 1
     return printer_function
 
@@ -218,9 +242,14 @@ def print_table(table, field_selection=None):
         index += 1
 
 def scan_logs(re_literal, logdir='./', method='find'):
-    # TODO: use os.walk here instead of subprocess
     if method == 'find':
-        logs = subprocess.check_output(["find", logdir, "-regex", "^.*" + re_literal + ".*"])
-        return logs
+        found = subprocess.check_output(["find", logdir, "-regex", "^.*" + re_literal + ".*"])
+        paths = found.splitlines()
+        return paths
+
+    elif method == 'walk':
+        #TODO: os.walk method
+        print("this would normally do an os.walk")
+
     else:
-        raise "no other logs scanning method currentlyl exists!"
+        print("no other logs scanning method currentlyl exists!")
