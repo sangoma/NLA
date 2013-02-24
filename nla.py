@@ -8,15 +8,16 @@
 # -implement xml parser
 # -implement signalling parser
 # -implement wav file plotter
+# -check for ipython and boot if available, else print stats?
 
 import sys
 import getopt
-from callset import *
+import callset
 
 def usage():
     """help function"""
     print("This tool parses an NCA log package, provides a disposition "
-          "summary and conducts log segmentation by classification.\n"
+          "summary and conducts log segmentation by results classification.\n"
           "It relies heavily on ipython for practical use to "
           "efficiently analyze a log set\n\n"
           "Usage: ./nla.py <cpa-stats.csv> <call-logs directory name>\n")
@@ -50,9 +51,4 @@ elif len(args) > 2:
     sys.exit(usage())
 
 # create a callset interface
-cs = CallSet(args[0], args[1], "base")
-
-# s = 0
-# for row in cs.reader:
-    # s += 1
-# print("there are " + str(s) + " records in the stats file")
+cs = callset.make_callset(args[0], args[1])
