@@ -129,7 +129,6 @@ with open(csv_file) as csv_buffer:
             path_to_file = '/'.join([filtered_logs_package, os.path.basename(wavs[0])])
             retcode = subprocess.call(["sox"] + combine_flag + wavs + ["-b", "16", "-e", "signed", path_to_file])
 
-
         for entry in logs:
             shutil.copy(entry, stats_anal_package)
             shutil.copy(entry, filtered_logs_package)

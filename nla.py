@@ -13,6 +13,7 @@
 import sys
 import getopt
 import callset
+import grapher
 
 def usage():
     """help function"""
@@ -51,4 +52,4 @@ elif len(args) > 2:
     sys.exit(usage())
 
 # create a callset interface
-cs = callset.make_callset(args[0], args[1])
+cs = callset.new_callset(args[0], args[1])
