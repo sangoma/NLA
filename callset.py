@@ -43,9 +43,14 @@ def filter_by_field(field_index, filter_func, value):
 def field_select(index_lst):
     return lambda container: (container[index] for index in index_lst)
 
+# strain the given interable into a list
 def strain(iterable):
     '''compile the values from this iterable into a list'''
     return [i for i in iterable]
+
+# returns the entries of callset in a list
+def lst(callset):
+    return strain(callset._entries)
 
 # generate a column iterator
 def field_iter(field_index, lst_of_entries):
@@ -54,7 +59,6 @@ def field_iter(field_index, lst_of_entries):
 
 # def stats_f(self, iterable, filter_f=None ):
 #     def comp(field_index):
-
 #     return None
 
 # instantiate interface for the command-line client
@@ -63,7 +67,7 @@ def new_callset(csv_file, logs_dir):
     factory = SetFactory()
     # partition using field index 5
     cs = factory.new_super(disjoin_field, csv_file, logs_dir)
-    return cs
+    return factory, cs
 
 # use a factory design pattern you fool!
 class SetFactory(object):
@@ -87,7 +91,7 @@ class SetFactory(object):
         name = name.replace(' ', '')
         setattr(parent, name, prop)
 
-    # gen a new subset and attach to the superset as an attribute
+    # gen a new subset to wrap the superset as an attribute
     def new_subset(self, super_set, filter_f):
 
             # using "containment and delegation"
@@ -95,18 +99,15 @@ class SetFactory(object):
                 def __init__(self, super_set, filter_func):
                     self._parent = super_set
                     self._filter = filter_func
-                    # self._stats_comp = 
+                    # self._stats_comp =
 
                 def __getattr__(self, attr):
                    return getattr(self._parent, attr)
 
+                # filter the parent set using the filtering function
                 @property
-                def show(self):
-                    self.print_spaced(map(self._field_mask, self._filter(self._entries)))
-
-                @property
-                def length(self):
-                    return len(list(self._filter(self._entries)))
+                def _entries(self):
+                    return self._filter(self._parent._entries)
 
             return SubSet(super_set, filter_f)
 
@@ -119,14 +120,13 @@ class CallSet(object):
         self._id = callset_id
         self.subset_field_tag = subset_field_tag
         self._subset_field_index = int()
-        # self.subset_field_index
         self._subset_tags = {}
-        self._field_mask = []
+        self._field_mask = []   # normally map this over the 
 
         # counters
-        # self.length = 0
         self.num_dup_dest = 0
         self.num_cid_unfound = 0
+
         # "members" of this call set
         self._fields = {}
         self._entries = []
@@ -140,11 +140,23 @@ class CallSet(object):
         readable_row = list(zip(self._indices, self._fields, self._entries[row_indices]))
         return readable_row
 
-    def stats(self):
+    @property
+    def stats(self, field=None):
+        if field == None:
+            table = [[field, total, float(100 * total/self.length)] for field,total in self._subset_tags.items()]
+            print_all(table)
+        else:
+            pass
+            # do crazy iterable summing stuff
+
         return None
 
     # search for a call based on field, string pair
     def find(self, pos):
+        return None
+
+    def filter(self, field, filter_f, value):
+        # subset = factory.subset(self, 
         return None
 
     @property
@@ -180,7 +192,7 @@ def add_package(callset, csv_file, logs_dir):
         print("opening csv file: '" + csv_file + "'")
         with open(csv_file) as csv_buffer:
 
-            # TODO: add a csv sniffer here to determine a dialect?
+            # TODO: add a csv sniffer here to determine an excell dialect?
             csv_reader = csv.reader(csv_buffer)
 
             # if callset is not populated with datak, gather template info
@@ -236,6 +248,7 @@ def add_package(callset, csv_file, logs_dir):
                     except subprocess.CalledProcessError as e:
                         print("scanning logs failed with output: " + e.output)
 
+                    # TODO: use the "collections" module here!
                     # keep track of max str lengths for each field
                     i = 0
                     for column in entry:
@@ -246,7 +259,8 @@ def add_package(callset, csv_file, logs_dir):
                     # if all else is good add the entry to our db
                     callset._entries.append(entry)
 
-                    # update the subset tags
+                    # TODO: use the "collections" module here!
+                    # update the subset tags and compile proportions
                     val = entry[callset._subset_field_index]
                     if val not in callset._subset_tags.keys():
                         callset._subset_tags[val] = 1
@@ -266,7 +280,7 @@ def add_package(callset, csv_file, logs_dir):
         print("Error:", exc)
         sys.exit(1)
 
-def write_csv(self):
+def write_csv(callset):
     """Access to a csv writer for writing a new package"""
     #ex. cs.write("dirname/here")
     print("this would write your new logs package...")
@@ -298,7 +312,7 @@ class LogPaths(object):
         self.wavs.sort()
 
 # Utilities
-def printer(field_widths=None):
+def printer(callset=None):
 
     # TODO: this should take in a callset with a dict of field:<largest-size-entry> and dynamically adjust column widths
     def printer_function(table):
