@@ -52,4 +52,4 @@ elif len(args) > 2:
     sys.exit(usage())
 
 # create a callset interface
-cs = callset.new_callset(args[0], args[1])
+fac, cs  = callset.new_callset(args[0], args[1])
