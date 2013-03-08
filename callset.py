@@ -20,7 +20,8 @@ cid            = 'Netborder Call-id'
 phone_num      = 'Phone Number'
 nca_result     = 'NCA Engine Result'
 det_nca_result = 'Detailed Cpd Result'
-# column used to 'segment' sub-callsets by value
+
+# field value used to 'segment' sub-callsets by value
 disjoin_field  = nca_result
 
 # higher order comparison/filtering functions
@@ -43,7 +44,10 @@ def filter_by_field(field_index, filter_func, value):
 def field_select(index_lst):
     return lambda container: (container[index] for index in index_lst)
 
-# strain the given interable into a list
+def iter_select(index_lst):
+    return lambda iterable: (iter_select([index])(iterable) for index in index_lst)
+
+# shorthand for list composition
 def strain(iterable):
     '''compile the values from this iterable into a list'''
     return [i for i in iterable]
@@ -74,7 +78,7 @@ class SetFactory(object):
 
     #TODO: consider attaching the factory to the callset itself?
     def new_super(self, subset_field_tag, csv_file, logs_dir):
-        cs = CallSet("stats_csv", subset_field_tag)
+        cs = CallSet("super", subset_field_tag)
         add_package(cs, csv_file, logs_dir)
 
         # allocate subsets and attach as attributes of the callset
@@ -82,8 +86,6 @@ class SetFactory(object):
             subset = self.new_subset(cs, filter_by_field(cs._subset_field_index, eq, str(s)))
             self.attach_prop(cs, s, subset)
         return cs
-
-    # def gen_props(self,
 
     def attach_prop(self, parent, name, prop):
         # remove spaces and dashes
@@ -97,9 +99,9 @@ class SetFactory(object):
             # using "containment and delegation"
             class SubSet(CallSet):
                 def __init__(self, super_set, filter_func):
+                    self._id = 'sub'    # seems like a hack (see CallSet.stats)-> polymorphic approach?
                     self._parent = super_set
                     self._filter = filter_func
-                    # self._stats_comp =
 
                 def __getattr__(self, attr):
                    return getattr(self._parent, attr)
@@ -122,6 +124,7 @@ class CallSet(object):
         self._subset_field_index = int()
         self._subset_tags = {}
         self._field_mask = []   # normally map this over the 
+        self.mask_indices = []
 
         # counters
         self.num_dup_dest = 0
@@ -137,12 +140,17 @@ class CallSet(object):
     def row(self, row_indices):
         """Access a row in readable form"""
         # TODO: eventually make this print pretty in ipython
-        readable_row = list(zip(self._indices, self._fields, self._entries[row_indices]))
-        return readable_row
+        # readable_row = list(zip(self._indices, self._fields, self._entries[row_indices]))
+        if type(row_indices) == int:
+            row_indices = [row_indices]
+            # return self._entries[row_indices]
+            #row_indices = [row_indices]
+        selection = iter_select(row_indices)
+        return [i for i in selection(self._entries)]
 
     @property
     def stats(self, field=None):
-        if field == None:
+        if field == None and self._id == 'super':
             table = [[field, total, float(100 * total/self.length)] for field,total in self._subset_tags.items()]
             print_all(table)
         else:
@@ -161,7 +169,7 @@ class CallSet(object):
 
     @property
     def show(self):
-        self.print_spaced(map(self._field_mask, self._entries))
+        self.print_table(map(self._field_mask, self._entries))
 
     @property
     def fields(self):
@@ -175,14 +183,15 @@ class CallSet(object):
     # function is defined only once
     def length(self):
         # if filter_f is None:
-        return len(self._entries)
+        return len([i for i in self._entries])
 
+    @property
+    def field_widths(self):
+        return [i for i in self._field_mask(self._field_widths)]
 
-    # this should be dynamically allocated based on results in the csv
-    # @property
-    # def AM(self):
-    #     ams = am_f(self._entries)
-    #     return self.print_spaced(ams)
+    @property
+    def display_fields(self):
+        return [name for name in self._field_mask(self._fields)]
 
 def add_package(callset, csv_file, logs_dir):
     """ add a new logs package to a callset """
@@ -208,14 +217,11 @@ def add_package(callset, csv_file, logs_dir):
                 callset._detail_result_index = callset._fields.index(det_nca_result)
 
                 # make a field mask
-                mask_indices = [callset._cid_index, callset._result_index, callset._detail_result_index]
-                callset._field_mask = field_select(mask_indices)
+                callset.mask_indices = [callset._cid_index, callset._result_index, callset._detail_result_index]
+                callset._field_mask = field_select(callset.mask_indices)
 
                 # find the index of the field to use as the disjoint union tag
                 callset._subset_field_index = callset._fields.index(callset.subset_field_tag)
-
-                # filter for fields of interest
-                callset.print_spaced = printer()
 
                 # create a list of indices
                 callset._indices = [i for i in range(len(callset._fields))]
@@ -259,8 +265,8 @@ def add_package(callset, csv_file, logs_dir):
                     # if all else is good add the entry to our db
                     callset._entries.append(entry)
 
-                    # TODO: use the "collections" module here!
                     # update the subset tags and compile proportions
+                    # TODO: use the "collections" module here!?!?
                     val = entry[callset._subset_field_index]
                     if val not in callset._subset_tags.keys():
                         callset._subset_tags[val] = 1
@@ -268,8 +274,8 @@ def add_package(callset, csv_file, logs_dir):
                     elif val in callset._subset_tags.keys():
                         callset._subset_tags[val] += 1
 
-            # assign summary properties
-            # callset.length = len(callset._entries)
+            # create a printer function
+            callset.print_table = printer(obj=callset)
 
             print(str(callset.num_dup_dest), "duplicate phone number destinations found!"
                  "\n\n", callset.__class__.__name__, " instance created!\n"
@@ -279,17 +285,6 @@ def add_package(callset, csv_file, logs_dir):
         print('file %s, line %d: %s' % (csv_buffer, callset._reader.line_num, err))
         print("Error:", exc)
         sys.exit(1)
-
-def write_csv(callset):
-    """Access to a csv writer for writing a new package"""
-    #ex. cs.write("dirname/here")
-    print("this would write your new logs package...")
-    return None
-
-def gen_subset_prop(callset, field_index, name):
-    setattr(callset, name, SubSet(callset))
-    # add proptery to callset
-    return None
 
 class LogPaths(object):
 
@@ -311,22 +306,44 @@ class LogPaths(object):
 
         self.wavs.sort()
 
-# Utilities
-def printer(callset=None):
+# CallSet Utilities
+def printer(obj=None, field_width=20):
+    '''printing closure: use for printing tables (list of lists).
+    Use this to create a printer for CallSet content displaying'''
 
-    # TODO: this should take in a callset with a dict of field:<largest-size-entry> and dynamically adjust column widths
+    if type(obj) == CallSet:
+    # but how will these update dynamically???
+        callset = obj
+        widths = callset.field_widths
+        fields = callset.display_fields
+        for w, l in zip(widths,fields):
+            lg = len(l)
+            if lg > w:
+                widths[widths.index(w)] = lg
+    else:
+        # use an infinite width generator
+        fields = []
+        widths = iter(lambda:field_width, 1)
+
     def printer_function(table):
-        # if field_selection is None:
-        #     fs_table = table
-        # else:
-        #     fs_table = map(field_selection, table)
 
-        index = 0  # for looks
-        for row in table:  # here a table is normally a list of lists
-            print('{0:5}'.format(str(index)), '|', end='')
-            # print('|'.join('{col:^{l}}'.format(col=column, l=len(str(column)) + 4) for column in row))
-            print('| '.join('{col:<35}'.format(col=column) for column in row))
-            index += 1
+        # mark as from parent scope
+        nonlocal widths
+        nonlocal fields
+
+        # print a field title row
+        print('index | ', end='')
+        for f, w in zip(fields, widths):
+            print('{field:<{width}}'.format(field=f, width=w), '|', end='')
+        print()
+
+        row_index = 0  # for looks
+        for row in table:  # here a table is normally a list of lists or an iterable over one
+            print('{0:5}'.format(str(row_index)), '| ', end='')
+            for col, w in zip(row, widths):
+                print('{column:<{width}}'.format(column=col, width=w), '|', end='')
+            print()
+            row_index += 1
 
     return printer_function
 
@@ -340,6 +357,12 @@ print_all = printer()
 #         print('|'.join('{col:^{l}}'.format(col=column, l=len(str(column)) + 4) for column in row))
 #         # print('|'.join('{col:^30}'.format(col=column) for column in row))
 #         index += 1
+
+def write_csv(callset):
+    """Access to a csv writer for writing a new package"""
+    #ex. cs.write("dirname/here")
+    print("this would write your new logs package...")
+    return None
 
 def scan_logs(re_literal, logdir='./', method='find'):
     if method == 'find':
@@ -361,6 +384,5 @@ def parse_log_file(logpaths_obj):
     return None
 def plot_graph(callset, entry_ranger):
     return None
-
 def ring_in_precon(audiofile):
     return None
