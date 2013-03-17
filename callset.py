@@ -3,23 +3,13 @@
 
 # IDEAS:
 # done - compose methods dynamically depending on results acquired
-# done - create a seperate class LogsPackage
-# - os.walk and build a dict of logs for each entry
 
 from imp import reload
+
 import time
 import datetime
-import csv
-import subprocess
-import matplotlib as mpl
-import os
 import sys
-
-# some important field strings
-cid            = 'Netborder Call-id'
-phone_num      = 'Phone Number'
-nca_result     = 'NCA Engine Result'
-det_nca_result = 'Detailed Cpd Result'
+import itertools
 
 # field value used to 'segment' sub-callsets by value
 disjoin_field  = nca_result
@@ -61,14 +51,10 @@ def field_iter(field_index, lst_of_entries):
     for entry in lst_of_entries:
         yield entry[field_index]
 
-# def stats_f(self, iterable, filter_f=None ):
-#     def comp(field_index):
-#     return None
-
 # instantiate interface for the command-line client
 def new_callset(csv_file, logs_dir):
-    # cs = CallSet("super", nca_result)
     factory = SetFactory()
+
     # partition using field index 5
     cs = factory.new_super(disjoin_field, csv_file, logs_dir)
     return factory, cs
@@ -137,27 +123,24 @@ class CallSet(object):
         self._log_paths = {}
 
 
-    def row(self, row_indices):
+    def islice(self, start, *stop_step):
         """Access a row in readable form"""
-        # TODO: eventually make this print pretty in ipython
-        # readable_row = list(zip(self._indices, self._fields, self._entries[row_indices]))
-        if type(row_indices) == int:
-            row_indices = [row_indices]
-            # return self._entries[row_indices]
-            #row_indices = [row_indices]
-        selection = iter_select(row_indices)
-        return [i for i in selection(self._entries)]
-
-    @property
-    def stats(self, field=None):
-        if field == None and self._id == 'super':
-            table = [[field, total, float(100 * total/self.length)] for field,total in self._subset_tags.items()]
-            print_all(table)
+        # TODO: eventually make this print pretty?
+        # print('start = ', start)
+        stop = 0
+        step = None
+        if len(stop_step) >= 1:
+            stop = stop_step[0]
+            if len(stop_step) == 2:
+                step = stop_step[1]
         else:
-            pass
-            # do crazy iterable summing stuff
+            stop = start + 1
 
-        return None
+        return itertools.islice(self._entries, start, stop, step)
+
+    def write(self):
+        '''write out current data objects as to a CPA package'''
+        write_package()
 
     # search for a call based on field, string pair
     def find(self, pos):
@@ -168,25 +151,34 @@ class CallSet(object):
         return None
 
     @property
+    def stats(self, field=None):
+        if field == None and type(self) == CallSet:
+            #TODO: abstract this such that we cycle through all the subsets of this callset instead of a silly dict?
+            table = [[field, count, '{0:.3f} %'.format(float(100 * count/self.length))] for field, count in self._subset_tags.items()]
+            table.sort(key=lambda lst: lst[1], reverse=True)
+            print_20(table)
+        else:
+            pass
+            # do crazy iterable summing stuff...
+
+        return None
+
+    @property
     def show(self):
         self.print_table(map(self._field_mask, self._entries))
 
     @property
     def fields(self):
-        # create list of tuples : ( index, field element)
-        fields = list(zip(self._indices, self._fields))
-        # print_all([self._fields])
-        return fields
+        print_all([self._fields])
 
     @property
     # consider making the filter_f empty for the super and then this
     # function is defined only once
     def length(self):
-        # if filter_f is None:
         return len([i for i in self._entries])
 
     @property
-    def field_widths(self):
+    def column_widths(self):
         return [i for i in self._field_mask(self._field_widths)]
 
     @property
@@ -224,7 +216,6 @@ def add_package(callset, csv_file, logs_dir):
                 callset._subset_field_index = callset._fields.index(callset.subset_field_tag)
 
                 # create a list of indices
-                callset._indices = [i for i in range(len(callset._fields))]
                 callset.width = len(callset._fields)
 
             # compile a list of csv/call entries
@@ -278,7 +269,7 @@ def add_package(callset, csv_file, logs_dir):
             callset.print_table = printer(obj=callset)
 
             print(str(callset.num_dup_dest), "duplicate phone number destinations found!"
-                 "\n\n", callset.__class__.__name__, " instance created!\n"
+                 "\n\n", callset.__class__.__name__, "instance created!\n"
                  "type: cs.<tab> to see available properties")
 
     except csv.Error as err:
@@ -286,35 +277,18 @@ def add_package(callset, csv_file, logs_dir):
         print("Error:", exc)
         sys.exit(1)
 
-class LogPaths(object):
 
-    def __init__(self, logs_list):
-        self.wavs = []
-        self.logs = []
-
-        for path in logs_list:
-            # assign properties by extension (note 'byte' format)
-            filename, extension = os.path.splitext(path)
-            if extension == b".log":
-                self.logs.append(path)
-
-            elif extension == b".xml":
-                self.xml = path
-
-            elif extension == b'.wav':
-                self.wavs.append(path)
-
-        self.wavs.sort()
-
-# CallSet Utilities
+# CallSet utilities
 def printer(obj=None, field_width=20):
     '''printing closure: use for printing tables (list of lists).
-    Use this to create a printer for CallSet content displaying'''
+    Use this to create a printer for displaying CallSet content
+    NOTE: must be passed a callset AFTER the callset set has been populated
+    with data'''
 
     if type(obj) == CallSet:
     # but how will these update dynamically???
         callset = obj
-        widths = callset.field_widths
+        widths = callset.column_widths
         fields = callset.display_fields
         for w, l in zip(widths,fields):
             lg = len(l)
@@ -332,13 +306,15 @@ def printer(obj=None, field_width=20):
         nonlocal fields
 
         # print a field title row
+        print('')
         print('index | ', end='')
         for f, w in zip(fields, widths):
             print('{field:<{width}}'.format(field=f, width=w), '|', end='')
-        print()
+        print('\n')
 
+        # here a table is normally a list of lists or an iterable over one
         row_index = 0  # for looks
-        for row in table:  # here a table is normally a list of lists or an iterable over one
+        for row in table:
             print('{0:5}'.format(str(row_index)), '| ', end='')
             for col, w in zip(row, widths):
                 print('{column:<{width}}'.format(column=col, width=w), '|', end='')
@@ -348,34 +324,18 @@ def printer(obj=None, field_width=20):
     return printer_function
 
 # default printer which prints all columns
-print_all = printer()
+print_all = printer(field_width=10)
+print_20 = printer(field_width=20)
 
-# def print_table(table, field_selection=None):
-#     index = 0
-#     for row in table:  # here a table is normally a list of lists
-#         print('{0:5}'.format(str(index)), '|', end='')
-#         print('|'.join('{col:^{l}}'.format(col=column, l=len(str(column)) + 4) for column in row))
-#         # print('|'.join('{col:^30}'.format(col=column) for column in row))
-#         index += 1
-
-def write_csv(callset):
+def write_package(callset):
     """Access to a csv writer for writing a new package"""
-    #ex. cs.write("dirname/here")
-    print("this would write your new logs package...")
+
+    # query for package name
+    print("Please enter the package name (Enter will use subset name) : ")
+    package_name = raw_input()
+
+    print("this would write your new logs package with name ", package_name, "...")
     return None
-
-def scan_logs(re_literal, logdir='./', method='find'):
-    if method == 'find':
-        found = subprocess.check_output(["find", logdir, "-regex", "^.*" + re_literal + ".*"])
-        paths = found.splitlines()
-        return paths
-
-    elif method == 'walk':
-        #TODO: os.walk method
-        print("this would normally do an os.walk")
-
-    else:
-        print("no other logs scanning method currentlyl exists!")
 
 # routines to be implemented
 def parse_xml(logpaths_obj):
