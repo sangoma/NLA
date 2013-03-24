@@ -15,20 +15,19 @@
 
 from imp import reload
 
-import sys
-import os
-import getopt
-import callset
-import subprocess
-import grapher
+import sys, os, getopt, subprocess
+import xml.etree.ElementTree as ET
 import csv
+
+# custom modules
+import callset
+import grapher
 
 # some important field strings
 cid_f          = 'Netborder Call-id'
 phone_num      = 'Phone Number'
 nca_result     = 'NCA Engine Result'
 det_nca_result = 'Detailed Cpd Result'
-
 
 def usage():
     """help function"""
@@ -51,18 +50,39 @@ def scan_logs(re_literal, logdir='./', method='find'):
     elif method == 'walk':
         #TODO: os.walk method
         print("this would normally do an os.walk")
-
     else:
         print("no other logs scanning method currentlyl exists!")
 
-class LogPaths(object):
+def xml_update(logs_obj):
+    f = logs_obj.xml
+    if f is None:
+        print("ERROR: the log set for '", loginfo_obj.cid, "' does not seem to contain an xml file\n"
+              "ERROR: unable to parse XML file in logs!\n")
+    else:
+        tree =  ET.parse(f)
+        root = tree.getroot()
+        cdr = root.find("./CallDetailRecord")
+        ci = cdr.find("./CallInfo")
 
-    def __init__(self, logs_list):
-        self.wavs = []
+        # parse the CallInfo
+        logs_obj.audio_time = ci.find("./TimeFirstAudioPushed").text
+        logs_obj.connect_time = ci.find("./TimeConnect").text
+        logs_obj.modechange_time = ci.find("./TimeModeChange").text
+
+        # parse the rest of the CDR
+        logs_obj.cpa_result = cdr.find("./CPAResult").text
+        logs_obj.final_prob = cdr.find("./CPAResultProbability").text
+
+class Logs(object):
+
+    def __init__(self, cid, logs_list):
+        self.cid = cid
         self.logs = []
+        self.wavs = []
+        # self.paths = {'logs':[], 'xml':None, 'wav':[]}
 
         for path in logs_list:
-            # assign properties by extension (note 'byte' format)
+            # assign properties by extension (note the 'byte' format)
             filename, extension = os.path.splitext(path)
             if extension == b".log":
                 self.logs.append(path)
@@ -73,7 +93,10 @@ class LogPaths(object):
             elif extension == b'.wav':
                 self.wavs.append(path)
 
+        # sort the wave files
         self.wavs.sort()
+
+        xml_update(self)
 
 class LogPackage(object):
     def __init__(self, csv_file, logs_dir):
@@ -89,7 +112,7 @@ class LogPackage(object):
         # "members" of this call set
         self.fields = {}
         self.entries = []
-        self.log_paths = {}
+        self.logs = {}
         self.entries = []
         self.failed_entries = []
 
@@ -112,8 +135,8 @@ class LogPackage(object):
 
                 # if LogPackage is not populated with data, gather template info
                 if len(self.entries) == 0:
-                    self.title = next(csv_reader)    # first line should be the title
-                    self.fields = next(csv_reader)   # second line should be the field names
+                    self.title        = next(csv_reader)    # first line should be the title
+                    self.fields       = next(csv_reader)   # second line should be the field names
                     self.field_widths = [0 for i in self.fields]
 
                     # gather user friendly fields (i.e. fields worth reading on the CLI)
@@ -129,20 +152,20 @@ class LogPackage(object):
                     self.width = len(self.fields)
 
                 # compile a list of csv/call entries
-                print("compiling logs index...")
+                print("compiling log index...")
                 for entry in csv_reader:
 
                     # search for log files using call-id field
                     cid = entry[self.cid_index]
-                    logs = scan_logs(cid)
+                    log_list = scan_logs(cid)
 
-                    if len(logs) == 0:
+                    if len(log_list) == 0:
                         print("WARNING no log files found for cid :", cid)
                         self.cid_unfound[cid] = 1
                         next
 
                     else:
-                        self.log_paths[cid] = LogPaths(logs)
+                        self.logs[cid] = Logs(cid, log_list)
 
                     # TODO: use the "collections" module here!
                     # keep track of max str lengths for each field
@@ -155,7 +178,7 @@ class LogPackage(object):
                     # if all else is good add the entry to our db
                     self.entries.append(entry)
 
-            print(str(sum(self.cid_unfound.values())), "cids which did not have logs in the provided package!")
+            print(str(sum(self.cid_unfound.values())), "cids which did not have logs in the provided package")
 
         except csv.Error as err:
             print('file %s, line %d: %s' % (csv_buffer, self._reader.line_num, err))
@@ -178,7 +201,8 @@ for opt in optlist:
         sys.exit(0)
     if opt[0] == "-s" or opt[0] == "--stats":
         showstats = True
-        print("enabled statistics!")
+        print("requested csv statistics summary ONLY!\n"
+              "calling handy gawk script...\n")
         continue
 
 if len(args) < 2:
@@ -202,13 +226,6 @@ disjoin_field  = nca_result
 # compile logs package into memory
 logs = LogPackage(csv_file, logs_dir)
 factory, cs = callset.new_callset(logs, disjoin_field)
-
-def cs_reload():
-    # create a callset interface
-    factory, cs = callset.new_callset(logs, disjoin_field)
-    # return callset.new_callset(logs, disjoin_field)
-
-cs_reload()
 
 # HINT: to create a new subset try something like...
 # ss = factory.new_subset(parent, filter_function)
