@@ -107,7 +107,7 @@ with open(csv_file) as csv_buffer:
                 continue
 
         if len(wavs) == 0:
-            print("NO WAV FILES FOUND!...skipping call: '" + row[0] +"'")
+            print("no WAVE files found!...skipping call: '" + row[0] +"'")
             continue
         else:
             wavcount += 1
@@ -134,7 +134,7 @@ with open(csv_file) as csv_buffer:
             shutil.copy(entry, filtered_logs_package)
 
 # copy csv to each package
-shutil.copy(csv_file, stats_anal_package)
+shutil.copy(csv_file, '/'.join([stats_anal_package, "cpa-stats.csv"]))
 shutil.copy(csv_file, filtered_logs_package)
 
 print("")
@@ -145,7 +145,7 @@ print("")
 print("zipping up " + stats_anal_package + "...")
 # os.chdir(stats_anal_package)
 with open(os.devnull, "w") as fnull:
-        retcode = subprocess.call(["zip", "-r", "", stats_anal_package], stdout = fnull)
+        retcode = subprocess.call(["zip", "-r", ".".join([str(stats_anal_package), "zip"]), stats_anal_package], stdout = fnull)
 
 print("New stats-analyzer package is => " + stats_anal_package + " and " + zipfile)
 print("New generic package is => " + filtered_logs_package)
