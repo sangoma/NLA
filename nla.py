@@ -8,6 +8,8 @@
 # -implement signalling parser
 # -implement wav file plotter
 # -check for ipython and boot if available, else print stats?
+# -create a path index to quickly parse once nla front end has converted a package
+# -ask user if they would like to verify path index
 
 # Ideas
 # done - create a seperate class LogsPackage
@@ -21,7 +23,6 @@ import csv
 
 # custom modules
 import callset
-import grapher
 
 # some important field strings
 cid_f          = 'Netborder Call-id'
@@ -74,7 +75,6 @@ def xml_update(logs_obj):
         logs_obj.final_prob = cdr.find("./CPAResultProbability").text
 
 class Logs(object):
-
     def __init__(self, cid, logs_list):
         self.cid = cid
         self.logs = []
@@ -103,17 +103,13 @@ class LogPackage(object):
 
         print("creating new logs package in memory...")
         # self._id = callset_id
-        self._field_mask = []   # normally map this over the 
-        self.mask_indices = []
+        self.fields         = {}
+        self._field_mask    = []
+        self.mask_indices   = []
 
-        # counters
-        self.cid_unfound = {}
-
-        # "members" of this call set
-        self.fields = {}
-        self.entries = []
-        self.logs = {}
-        self.entries = []
+        self.cid_unfound    = {}
+        self.logs           = {}
+        self.entries        = []
         self.failed_entries = []
 
         # compile data
@@ -220,13 +216,21 @@ else:
 # handles
 global factory, cs
 
-# field value used to 'segment' sub-callsets by value
+# field value used to 'segment' sub-callsets in in the object interface
 disjoin_field  = nca_result
 
 # compile logs package into memory
 logs = LogPackage(csv_file, logs_dir)
+# build a callset interface
 factory, cs = callset.new_callset(logs, disjoin_field)
 
-# HINT: to create a new subset try something like...
-# ss = factory.new_subset(parent, filter_function)
+def reset():
+    factory, cs = callset.new_callset(logs, disjoin_field)
+    return factory, cs
+
+
+# HINT: to create a new subset try something like,
+# subset = factory.new_subset(parent, filter_function)
 # where the filter_function is something like -> filter_by_field(3, gt, 500)
+# here 3 is field index, gt ('greater then') is a comparison function, 500 is a const to compare against
+# see callset.py for more details

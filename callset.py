@@ -2,8 +2,9 @@
 # Python3 implementation
 
 import itertools
+import grapher
 
-# higher order comparison/filtering functions
+# higher order, value comparison/filtering functions
 def eq(field_index, value):
     return lambda container: container[field_index] == value
 def neq(field_index, value):
@@ -26,7 +27,10 @@ def field_select(index_lst):
     return lambda container: (container[index] for index in index_lst)
 
 def iter_select(index_lst):
-    return lambda iterable: (iter_select([index])(iterable) for index in index_lst)
+    return lambda iterable: (itertools.islice(iterable, index, index + 1) for index in index_lst)
+
+# def iter_select(index_lst):
+#     return lambda iterable: (iter_select([index])(iterable) for index in index_lst)
 
 # generate a column iterator
 def field_iter(field_index, lst_of_entries):
@@ -98,7 +102,7 @@ class CallSet(object):
         self._cid_unfound = {}
 
         # "members" of this call set
-        self._logs_obj = None
+        self._logs_pack = None
         self._fields = []
         self._entries = []
         self._destinations = set()
@@ -108,7 +112,7 @@ class CallSet(object):
         self._dup_dest = 0
         self._entries.clear()
         self._destinations.clear()
-        add_package(self, self._logs_obj)
+        add_package(self, self._logs_pack)
 
     def islice(self, start, *stop_step):
         """Access a range of callset entries"""
@@ -151,33 +155,57 @@ class CallSet(object):
 
         return None
 
+    def plot(self, start_index, *entries):
+
+        # if given a number of indices create an index list
+        if len(entries) > 1:
+            indices = [start_index]
+            for index in entries:
+                indices.append(index)
+
+        for entry in self.islice(start_index):
+            # TODO: make sure that wavs is only a single file
+            cid = entry[self._cid_index]
+            wave_path = self._logs_pack.logs[cid].wavs[0]
+            wavsig = grapher.WavSignal(wave_path)
+            axes = wavsig.plot()
+            wavsig.vline_annotate(axes, 5)
+            # path = entry
+            return wavsig
+
+    def close(self):
+        pass
+
     @property
-    def show(self):
-        self.print_table(map(self._field_mask, self._entries))
+    def _display_fields(self):
+        return [name for name in self._field_mask(self._fields)]
 
     @property
     def fields(self):
-        print_all([self._fields])
-
-    @property
-    def length(self):
-        return len([i for i in self._entries])
+        return self._fields
+        # print_all([self._fields])
 
     @property
     def column_widths(self):
         return [i for i in self._field_mask(self._field_widths)]
 
     @property
-    def display_fields(self):
-        return [name for name in self._field_mask(self._fields)]
+    def show(self):
+        self.print_table(map(self._field_mask, self._entries))
+
+    @property
+    def length(self):
+        return len([i for i in self._entries])
+        #consider?
+        # return sum(itertools.count() for i in self._entries)
 
 def add_package(callset, logs_package):
-    ''' add a new logs package to a callset '''
+    '''populate a callset from a logs package'''
 
     # if callset is not populated with data, gather template info
     if len(callset._entries) == 0:
 
-        callset._logs_obj     = logs_package
+        callset._logs_pack     = logs_package
         callset._fields       = logs_package.fields
         callset._field_widths = logs_package.field_widths
         callset.width         = logs_package.width
@@ -232,14 +260,14 @@ def add_package(callset, logs_package):
 def printer(obj=None, fields=[], field_width=20, delim='|'):
     '''printing closure: use for printing tables (list of lists).
     Use this to create a printer for displaying CallSet content
-    NOTE: must be passed a callset AFTER the callset set has been populated
-    with data'''
+    NOTE: should only be passed a callset AFTER the callset set has been populated
+    with data (run callset.add_package first)'''
 
     if type(obj) == CallSet:
     # but how will these update dynamically???
         callset = obj
         widths = callset.column_widths
-        fields = callset.display_fields
+        fields = callset._display_fields
         for w, l in zip(widths,fields):
             lg = len(l)
             if lg > w:
@@ -262,13 +290,14 @@ def printer(obj=None, fields=[], field_width=20, delim='|'):
         print('\n')
 
         # here a table is normally a list of lists or an iterable over one
-        row_index = 0  # for looks
-        for row in table:
+        # TODO: use enumerate(table) instead for index
+        # row_index = 0  # for looks
+        for row_index, row in enumerate(table):
             print('{0:5}'.format(str(row_index)), delim, '', end='')
             for col, w in zip(row, widths):
                 print('{column:<{width}}'.format(column=col, width=w), delim, '', end='')
             print()
-            row_index += 1
+            # row_index += 1
 
     return printer_function
 
@@ -287,11 +316,7 @@ def write_package(callset):
     return None
 
 # routines to be implemented
-def parse_xml(logpaths_obj):
-    return None
 def parse_log_file(logpaths_obj):
-    return None
-def plot_graph(callset, entry_ranger):
     return None
 def ring_in_precon(audiofile):
     return None
