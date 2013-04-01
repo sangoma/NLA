@@ -207,6 +207,12 @@ def add_package(callset, logs_package):
 
         callset._logs_pack     = logs_package
         callset._fields       = logs_package.fields
+
+    # if callset is not populated with data, gather template info
+    if len(callset._entries) == 0:
+
+        callset._logs_pack     = logs_package
+        callset._fields       = logs_package.fields
         callset._field_widths = logs_package.field_widths
         callset.width         = logs_package.width
 
