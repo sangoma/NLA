@@ -117,11 +117,9 @@ with open(csv_file) as csv_buffer:
                 continue
 
         if len(wavs) == 0:
-            print("no WAVE files found!...skipping call: '" + row[0] +"'")
-            continue
+            print("no WAVE files found! call: '" + row[0] +"'")
+            # continue
         else:
-            # add this row to our package csv
-            csv_writer.writerow(row)
 
             wavcount += 1
             # sort in place
@@ -142,9 +140,15 @@ with open(csv_file) as csv_buffer:
             path_to_file = '/'.join([filtered_logs_package, os.path.basename(wavs[0])])
             retcode = subprocess.call(["sox"] + combine_flag + wavs + ["-b", "16", "-e", "signed", path_to_file])
 
+        if len(logs) > 0:
+            # add this row to our package csv
+            csv_writer.writerow(row)
+
             for entry in logs:
                 shutil.copy(entry, stats_anal_package)
                 shutil.copy(entry, filtered_logs_package)
+        else:
+            print("no log files found! call '" + row[0] + "'")
 
 #close out the new csv
 oc.close()
