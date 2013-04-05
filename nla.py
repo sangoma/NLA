@@ -25,7 +25,7 @@ import shutil
 # custom modules
 import callset
 
-# some important field strings
+# important field strings
 cid_f          = 'Netborder Call-id'
 phone_num      = 'Phone Number'
 nca_result     = 'NCA Engine Result'
@@ -39,19 +39,27 @@ stats_anal_package = "./sa_package"
 tuning_dir         = "./tuning_logs_package"
 
 # if this file exists the audio data has already been prepped
-# this index allows for fast file path loading
-log_index = "log-index.xml"
+# this index allows for fast file path loading without having to re-scan for files
+log_index_f_name = "log-index.xml"
 
 def usage():
     """help function"""
-    print("This tool parses an NCA log package, provides a disposition "
-          "summary and conducts log segmentation by results classification.\n"
-          "It relies heavily on ipython for practical use to "
-          "efficiently analyze a log set\n\n"
-          "Usage: ./nla.py <cpa-stats.csv> <call-logs directory name>\n")
+    print('''This tool parses a customer provided NCA log package which should contain:
+- cpa-stats.csv file
+- call-logs/ directory
+
+This tool will generate the following packages in new directories when provided an unprocessed call-log set:
+- NCA stats analyser package (a web based windows tool used for annotation)
+- logs package prepped for offline NCA benchmark tool with audio recordings converted to lpcm
+
+Notes:
+  This tool relies heavily on ipython for practical use to efficiently analyze a log set.
+  If you don't have ipython installed then get it installed!
+
+Usage: ./nla.py <cpa-stats.csv> <logs directory>\n''')
 
 # create a dir if it doesn't already exist
-def make_dir(d):
+def verbose_make_dir(d):
     if not os.path.exists(d):
         print("-> creating package dir: " + d)
         os.makedirs(d)
@@ -70,7 +78,6 @@ def scan_logs(re_literal, search_dir, method='find'):
             # if the returned values are 'bytes' then convert to strings
             # if len(paths) > 0 and type(paths[0]) == 'bytes':
             str_paths = [b.decode() for b in paths]
-
             return str_paths
 
         except subprocess.CalledProcessError as e:
@@ -82,7 +89,7 @@ def scan_logs(re_literal, search_dir, method='find'):
     else:
         print("no other logs scanning method currentlyl exists!")
 
-def write_log_index(cid, logs_list):
+def write_log_index_f_name(cid, logs_list):
     # TODO: write a log-index xml file into the lin_log_set dir for
     # quick parsing on reload???
     pass
@@ -115,8 +122,6 @@ def add_to_package(log_list, dest_dir, output_format='same', remove_str=None):
     new_paths    = []
     combine_flag = []
     format_spec  = []
-
-    # make_dir(dest_dir)
 
     for path in log_list:
         filename, extension = os.path.splitext(path)
@@ -156,42 +161,6 @@ def add_to_package(log_list, dest_dir, output_format='same', remove_str=None):
 
     return new_paths
 
-class Logs(object):
-    def __init__(self, cid, logs_list):
-        self.cid = cid
-        self.logs = []
-        self.xml = None
-
-        # list of wavs
-        wavs = []
-
-        for path in logs_list:
-            # assign properties by extension (note the 'byte' format)
-            filename, extension = os.path.splitext(path)
-            if extension == ".log":
-                self.logs.append(path)
-
-            elif extension == ".xml":
-                self.xml = path
-
-            elif extension == '.wav':
-                wavs.append(path)
-
-        if len(wavs) == 0:
-            print("WARNING : no wave files found for cid '", self.cid, "'")
-            self.wav = None
-
-        elif len(wavs) > 1:
-            print("Log instance was passed more then 1 wave file!\n"
-                  "This probably means the wav files were not processed properly!")
-            wavs.sort()
-            self.wav = wavs[0]
-
-        else:
-            self.wav = wavs[0]
-
-        xml_log_update(self)
-
 class LogPackage(object):
     '''A LogPackage is the in-memory representation of a customer provided log set.
     More specifically, a LogSet represents the actual data provided by the customer after
@@ -225,20 +194,39 @@ class LogPackage(object):
     def load_logs(self, csv_file, logs_dir):
         """ load a new log package into memory """
 
+        # default config
+        gen_lin = gen_sa = True
+
         # check if log directory contains a log-index.xml file
-        if os.path.isfile(os.path.join(logs_dir, log_index)):
-            print("detected log index file : '", log_index, "'")
+        index_file = os.path.join(logs_dir, log_index_f_name)
+        if os.path.isfile(index_file):
+            print("detected log index file : '", index_file, "'")
+
+            # a hack for now until I get time to pick a format for the index xml file
+            with open(index_file) as f:
+                if f.read() == '':
+                    print(index_file, "contains nothing...so let's not generate new packages")
+                    gen_lin = False
+                    gen_sa = False
+
             # TODO: parse some kind of xml db file
-            print("CURRENTLY NOT IMPLEMENTED:\n"
-                  "should parse xml file here and populate the instance that way!")
+            print("CURRENTLY NOT IMPLEMENTED: should parse xml file here and populate the instance that way!")
             # for list in xmlelement: (here xmelement is implemented by a generator)
             #     blah = Logs(list)
             pass
 
         else:
-            print("no '", log_index, "' found!\n")
-            make_dir(stats_anal_package)
-            make_dir(tuning_dir)
+            print("no '", log_index_f_name, "' found!\n")
+
+            # create package dirs
+            verbose_make_dir(stats_anal_package)
+            verbose_make_dir(tuning_dir)
+
+            # create a log index file
+            print("creating a log index file...")
+            with open(index_file, 'a') as xml:
+                xml.write("")
+
             print("scanning for log files ...")
                   # "would you like to re-scan for log files on the system? [Y/n]")
             # answer = raw_input()
@@ -277,10 +265,8 @@ class LogPackage(object):
                 print("compiling log index...\n")
                 for entry in csv_reader:
 
-                    # search for log files using call-id field
+                    # search for log files in the file system using call-id field
                     cid = entry[self.cid_index]
-
-                    # search for the log files in the file system
                     log_list = scan_logs(cid, logs_dir)
 
                     if len(log_list) == 0:
@@ -290,20 +276,20 @@ class LogPackage(object):
 
                     else:
                         # copy to the tuning package dir
-                        tuning_list = add_to_package(log_list, tuning_dir, output_format='linear')
-                        self.logs[cid] = Logs(cid, tuning_list)
+                        if gen_lin == True:
+                            log_list = add_to_package(log_list, tuning_dir, output_format='linear')
+
+                        self.logs[cid] = Logs(cid, log_list)
 
                         # copy to the stats analyser package dir
-                        add_to_package(log_list, stats_anal_package, remove_str=troublesome_suffix)
+                        if gen_sa == True:
+                            add_to_package(log_list, stats_anal_package, remove_str=troublesome_suffix)
 
-
-                    # TODO: use the "collections" module here!
+                    # TODO: use the "collections" module here?!
                     # keep track of max str lengths for each field
-                    # i = 0
                     for i, column in enumerate(entry):
                         if len(column) > self.field_widths[i]:
                             self.field_widths[i] = len(column)
-                        # i += 1
 
                     # if all else is good add the entry to our db
                     self.entries.append(entry)
@@ -314,6 +300,41 @@ class LogPackage(object):
             print('file %s, line %d: %s' % (csv_buffer, self._reader.line_num, err))
             print("Error:", exc)
             sys.exit(1)
+
+class Logs(object):
+    def __init__(self, cid, logs_list):
+        self.cid = cid
+        self.logs = []
+        self.xml = None
+
+        # list of wavs
+        wavs = []
+
+        for path in logs_list:
+            # assign properties by extension (note the 'byte' format)
+            filename, extension = os.path.splitext(path)
+            if extension == ".log":
+                self.logs.append(path)
+
+            elif extension == ".xml":
+                self.xml = path
+
+            elif extension == '.wav':
+                wavs.append(path)
+
+        if len(wavs) == 0:
+            print("WARNING : no wave files found for cid '", self.cid, "'")
+            self.wav = None
+
+        elif len(wavs) > 1:
+            print("Log instance was passed more then 1 wave file!\n"
+                  "WARNING: This probably means the wav files were not processed properly!")
+            wavs.sort()
+            self.wav = wavs[0]
+        else:
+            self.wav = wavs[0]
+
+        xml_log_update(self)
 
 # def main(argv):
 # main(sys.argv)
@@ -334,6 +355,10 @@ for opt in optlist:
         print("requested csv statistics summary ONLY!\n"
               "calling handy gawk script...\n")
         # TODO: actually call the gawk script from here...
+        continue
+    if opt[0] == "--skip-package-gen":
+        gen_lin = False
+        gen_sa  = False
         continue
 
 if len(args) < 2:
