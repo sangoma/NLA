@@ -12,8 +12,8 @@
 # -ask user if they would like to verify path index
 
 # Ideas
-# done - create a seperate class LogsPackage
-# - os.walk and build a dict of logs for each entry
+# done - create a seperate class CallLogs package
+# - os.walk instead of 'find' utility
 
 from imp import reload
 
@@ -74,9 +74,7 @@ def scan_logs(re_literal, search_dir, method='find'):
             found = subprocess.check_output(["find", search_dir, "-regex", "^.*" + re_literal + ".*"])
             paths = found.splitlines()
 
-            # TODO: move this up to line 64
-            # if the returned values are 'bytes' then convert to strings
-            # if len(paths) > 0 and type(paths[0]) == 'bytes':
+            # if the returned values are 'bytes' then convert to strings ie utf-8
             str_paths = [b.decode() for b in paths]
             return str_paths
 
@@ -87,7 +85,7 @@ def scan_logs(re_literal, search_dir, method='find'):
         #TODO: os.walk method
         print("this should normally do an os.walk")
     else:
-        print("no other logs scanning method currentlyl exists!")
+        print("no other logs scanning method currentlyl exists...sorry")
 
 def write_log_index_f_name(cid, logs_list):
     # TODO: write a log-index xml file into the lin_log_set dir for
@@ -153,18 +151,17 @@ def add_to_package(log_list, dest_dir, output_format='same', remove_str=None):
     wav_path = '/'.join([dest_dir, wavname])
     new_paths.append(wav_path)
 
-    # call sox to do the conversion TODO: check this exists at the front end
+    # call sox to do the conversion TODO: check sox exists at the front end?
     if output_format == 'linear':
         format_spec = ["-b", "16", "-e", "signed"]
 
     retcode = subprocess.call(["sox"] + combine_flag + wavs + format_spec + [wav_path])
-
     return new_paths
 
 class LogPackage(object):
     '''A LogPackage is the in-memory representation of a customer provided log set.
-    More specifically, a LogSet represents the actual data provided by the customer after
-    the call recording data has been converted to linear format. 
+    More specifically, a LogSet references the actual data provided by the customer after
+    the call recording data has been converted to linear format.
 
     A LogSet instance contains the following reference information:
     - file paths to log files which are copied to a new directory which of 'prepped' audio files in lpcm format
@@ -180,7 +177,7 @@ class LogPackage(object):
         self.mask_indices   = []
 
         self.cid_unfound    = {}
-        self.logs           = {}
+        self.call_logs      = {}
         self.entries        = []
         self.failed_entries = []
 
@@ -212,7 +209,7 @@ class LogPackage(object):
             # TODO: parse some kind of xml db file
             print("CURRENTLY NOT IMPLEMENTED: should parse xml file here and populate the instance that way!")
             # for list in xmlelement: (here xmelement is implemented by a generator)
-            #     blah = Logs(list)
+            #     blah = CallLogs(list)
             pass
 
         else:
@@ -275,15 +272,15 @@ class LogPackage(object):
                         next
 
                     else:
+                        # copy to the stats analyser package dir
+                        if gen_sa == True:
+                            add_to_package(log_list, stats_anal_package, remove_str=troublesome_suffix)
+
                         # copy to the tuning package dir
                         if gen_lin == True:
                             log_list = add_to_package(log_list, tuning_dir, output_format='linear')
 
-                        self.logs[cid] = Logs(cid, log_list)
-
-                        # copy to the stats analyser package dir
-                        if gen_sa == True:
-                            add_to_package(log_list, stats_anal_package, remove_str=troublesome_suffix)
+                        self.call_logs[cid] = CallLogs(cid, log_list)
 
                     # TODO: use the "collections" module here?!
                     # keep track of max str lengths for each field
@@ -301,7 +298,7 @@ class LogPackage(object):
             print("Error:", exc)
             sys.exit(1)
 
-class Logs(object):
+class CallLogs(object):
     def __init__(self, cid, logs_list):
         self.cid = cid
         self.logs = []
@@ -383,11 +380,6 @@ disjoin_field  = nca_result
 logs = LogPackage(csv_file, logs_dir)
 # build a callset interface
 factory, cs = callset.new_callset(logs, disjoin_field)
-
-def reset():
-    factory, cs = callset.new_callset(logs, disjoin_field)
-    return factory, cs
-
 
 # HINT: to create a new subset try something like,
 # subset = factory.new_subset(parent, filter_function)

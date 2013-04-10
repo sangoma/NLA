@@ -1,18 +1,18 @@
-# interface for a call set
+# call set interface
 # Python3 implementation
 
 import itertools
 import grapher
 
 # higher order, value comparison/filtering functions
-def eq(field_index, value):
-    return lambda container: container[field_index] == value
-def neq(field_index, value):
-    return lambda container: container[field_index] != value
-def gt(field_index, value):
-    return lambda container: container[field_index] > value
+def eq(subscript, value):
+    return lambda container: container[subscript] == value
+def neq(subscript, value):
+    return lambda container: container[subscript] != value
+def gt(subscript, value):
+    return lambda container: container[subscript] > value
 
-# filter a callset by a field entry value (uses above filters)
+# filter a callset._entries by a field entry value (generally uses above functions)
 def filter_by_field(field_index, filter_func, value):
     '''create a filtered iterable of entries by field'''
     return lambda lst: filter(filter_func(field_index, value), lst)
@@ -23,11 +23,23 @@ def filter_by_field(field_index, filter_func, value):
 
 # select specific fields from an iterable
 # this function will usually be applied over the 'parent' container/iterable
-def field_select(index_lst):
-    return lambda container: (container[index] for index in index_lst)
+def field_select(index_itr):
+    # return lambda container: (container[index] for index in index_lst)
+    return lambda container: [container[index] for index in index_itr]
 
-def iter_select(index_lst):
-    return lambda iterable: (itertools.islice(iterable, index, index + 1) for index in index_lst)
+# a generic iterable equivalent of the above function
+# (which was the whole point of all this abstract fp nonsense in the first place!)
+def iter_select(indices, itr):
+    ind = [i for i in indices]
+    for i, e in enumerate(itr):
+        if i in ind:
+            yield e
+        else:
+            continue
+
+    # for index in index_lst:
+        # return lambda itr: (itertools.islice(itr, index, index + 1) for index in index_itr)
+    # return lambda iterable: (itertools.islice(iterable, index, index + 1) for index in index_lst)
 
 # def iter_select(index_lst):
 #     return lambda iterable: (iter_select([index])(iterable) for index in index_lst)
@@ -106,6 +118,7 @@ class CallSet(object):
         self._fields = []
         self._entries = []
         self._destinations = set()
+        self.grapher = grapher.WavPack([])
         # self._log_paths = {}
 
     def _reload(self):
@@ -113,19 +126,23 @@ class CallSet(object):
         self._entries.clear()
         self._destinations.clear()
         add_package(self, self._logs_pack)
+        self.grapher.reset_cache()
+
+    def select(self, index_itr):
+        '''takes in an iterable of indices to select entries from the callset and
+        returns a list of the requested entries'''
+        return iter_select(index_itr, self._entries)
 
     def islice(self, start, *stop_step):
         """Access a range of callset entries"""
         # TODO: eventually make this print pretty?
         # print('start = ', start)
-        stop = 0
+        stop = start + 1
         step = None
         if len(stop_step) >= 1:
             stop = stop_step[0]
             if len(stop_step) == 2:
                 step = stop_step[1]
-        else:
-            stop = start + 1
 
         return itertools.islice(self._entries, start, stop, step)
 
@@ -135,11 +152,11 @@ class CallSet(object):
 
     # search for a call based on field, string pair
     def find(self, pos):
-        return None
+        pass
 
     def filter(self, field, filter_f, value):
         # subset = factory.subset(self, 
-        return None
+        pass
 
     def stats(self, field=None):
         if field == None and type(self) == CallSet:
@@ -155,26 +172,28 @@ class CallSet(object):
 
         return None
 
-    def plot(self, start_index, *entries):
+    def plot(self, *indices):
 
-        # if given a number of indices create an index list
-        if len(entries) > 1:
-            indices = [start_index]
-            for index in entries:
-                indices.append(index)
+        # wgrapher = grapher.WavPack([])
+        sip_log_list = []
+        wav_list = []
 
-        for entry in self.islice(start_index):
-            # TODO: make sure that wavs is only a single file
+        # TODO: allow for plotting 'ranges' of calls (i.e. 1 to 4 in steps of 1...etc)
+        for entry in self.select(indices):
             cid = entry[self._cid_index]
-            wave_path = self._logs_pack.logs[cid].wavs[0]
-            wavsig = grapher.WavSignal(wave_path)
-            axes = wavsig.plot()
-            wavsig.vline_annotate(axes, 5)
-            # path = entry
-            return wavsig
+            # TODO: make sure that wavs is only a single file
+            wavefile = self._logs_pack.call_logs[cid].wav
+            wav_list.append(wavefile)
 
-    def close(self):
-        pass
+        self.grapher.add(wav_list)
+        axes = self.grapher._plot(range(len(wav_list)))
+
+        for ax in axes.values():
+            # parse .log files for prob computations
+            grapher.red_vline(ax, 5, label='SIP 200 OK')
+
+    def close_fig(self):
+        self.grapher.close_all_figs
 
     @property
     def _display_fields(self):
@@ -199,24 +218,25 @@ class CallSet(object):
         #consider?
         # return sum(itertools.count() for i in self._entries)
 
+    # @property
+    # def graph(self): return self._grapher
+    # @graph.
+    # def graph(
+    #     pass
+
+
 def add_package(callset, logs_package):
     '''populate a callset from a logs package'''
 
     # if callset is not populated with data, gather template info
     if len(callset._entries) == 0:
 
-        callset._logs_pack     = logs_package
-        callset._fields       = logs_package.fields
-
-    # if callset is not populated with data, gather template info
-    if len(callset._entries) == 0:
-
-        callset._logs_pack     = logs_package
+        callset._logs_pack    = logs_package
         callset._fields       = logs_package.fields
         callset._field_widths = logs_package.field_widths
         callset.width         = logs_package.width
 
-        # copy useful indexes
+        # copy useful indices
         callset._cid_index    = logs_package.cid_index
         callset._phone_index  = logs_package.phone_index
 
@@ -224,7 +244,7 @@ def add_package(callset, logs_package):
         callset._mask_indices = logs_package.mask_indices
         callset._field_mask   = field_select(callset._mask_indices)
 
-        # find the index of the field to use as the disjoint union tag
+        # find the index of the field to use as the 'disjoint union tag'
         callset._subset_field_index = callset._fields.index(callset.subset_field_tag)
 
         # callset._log_paths    = logs_package.log_paths
@@ -263,6 +283,8 @@ def add_package(callset, logs_package):
           "type: cs.<tab> to see available properties")
 
 # CallSet utils
+
+#TODO: consider making this a direct function instead of a closure
 def printer(obj=None, fields=[], field_width=20, delim='|'):
     '''printing closure: use for printing tables (list of lists).
     Use this to create a printer for displaying CallSet content
@@ -270,7 +292,7 @@ def printer(obj=None, fields=[], field_width=20, delim='|'):
     with data (run callset.add_package first)'''
 
     if type(obj) == CallSet:
-    # but how will these update dynamically???
+        #TODO: but how will these update dynamically???
         callset = obj
         widths = callset.column_widths
         fields = callset._display_fields
@@ -298,8 +320,11 @@ def printer(obj=None, fields=[], field_width=20, delim='|'):
         # here a table is normally a list of lists or an iterable over one
         # TODO: use enumerate(table) instead for index
         # row_index = 0  # for looks
+
+        # print rows
         for row_index, row in enumerate(table):
             print('{0:5}'.format(str(row_index)), delim, '', end='')
+            # print columns
             for col, w in zip(row, widths):
                 print('{column:<{width}}'.format(column=col, width=w), delim, '', end='')
             print()
@@ -307,7 +332,7 @@ def printer(obj=None, fields=[], field_width=20, delim='|'):
 
     return printer_function
 
-# default printer which prints all columns
+# default printers which prints all columns
 print_all = printer(field_width=10)
 print_stats_w20 = printer(field_width=20, fields=['Disposition', 'Sum', 'Proportion'], delim='|')
 
@@ -315,7 +340,7 @@ def write_package(callset):
     """Access to a csv writer for writing a new package"""
 
     # query for package name
-    print("Please enter the package name (Enter will use subset name) : ")
+    print("Please enter the package name (<Enter> to use subset name) : ")
     package_name = raw_input()
 
     print("this would write your new logs package with name ", package_name, "...")
