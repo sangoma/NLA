@@ -17,17 +17,17 @@ def filter_by_field(field_index, filter_func, value):
     '''create a filtered iterable of entries by field'''
     return lambda lst: filter(filter_func(field_index, value), lst)
 
-# example filters which can be applied to a callset._entries
-# am_f = filter_by_field(5, eq, "Answering-Machine")
-# human_f = filter_by_field(5, eq, "Human")
+'''example filters which can be applied to a callset._entries :
+    am_f    = filter_by_field(5, eq, "Answering-Machine")
+    human_f = filter_by_field(5, eq, "Human")'''
 
-# select specific fields from an iterable
+# select specific fields from a subscriptable container
 # this function will usually be applied over the 'parent' container/iterable
 def field_select(index_itr):
-    # return lambda container: (container[index] for index in index_lst)
-    return lambda container: [container[index] for index in index_itr]
+    return lambda container: (container[index] for index in index_itr)
+    # return lambda container: [container[index] for index in index_itr]
 
-# a generic iterable equivalent of the above function
+# equivalent of the above function but uses generic iterables as i/o
 # (which was the whole point of all this abstract fp nonsense in the first place!)
 def iter_select(indices, itr):
     ind = [i for i in indices]
@@ -37,32 +37,25 @@ def iter_select(indices, itr):
         else:
             continue
 
-    # for index in index_lst:
-        # return lambda itr: (itertools.islice(itr, index, index + 1) for index in index_itr)
-    # return lambda iterable: (itertools.islice(iterable, index, index + 1) for index in index_lst)
-
-# def iter_select(index_lst):
-#     return lambda iterable: (iter_select([index])(iterable) for index in index_lst)
-
 # generate a column iterator
 def field_iter(field_index, lst_of_entries):
     for entry in lst_of_entries:
         yield entry[field_index]
 
-# instantiate interface for the command-line client
+# factory interface for the command-line client
 def new_callset(log_package, disjoin_field):
-    factory = SetFactory()
+    factory = CallSetFactory()
 
     # partition using field index 5
-    cs = factory.new_super(log_package, disjoin_field)
-    return factory, cs
+    return factory.new_super(log_package, disjoin_field)
 
 # use a factory design pattern you fool!
-class SetFactory(object):
+class CallSetFactory(object):
 
-    #TODO: consider attaching the factory to the callset itself?
     def new_super(self, log_package, subset_field_tag):
         cs = CallSet("super", subset_field_tag)
+    #TODO: consider attaching the factory to the callset itself?
+        cs.factory = self
         add_package(cs, log_package)
 
         # allocate subsets and attach as attributes of the callset
@@ -174,23 +167,30 @@ class CallSet(object):
 
     def plot(self, *indices):
 
-        # wgrapher = grapher.WavPack([])
         sip_log_list = []
         wav_list = []
+        call_logs = []
 
         # TODO: allow for plotting 'ranges' of calls (i.e. 1 to 4 in steps of 1...etc)
         for entry in self.select(indices):
             cid = entry[self._cid_index]
             # TODO: make sure that wavs is only a single file
-            wavefile = self._logs_pack.call_logs[cid].wav
-            wav_list.append(wavefile)
+            cl = self._logs_pack.call_logs[cid]
+            if cl.wav == None:
+                print("WARNING : no wave files were found for cid '",cid,"'")
+            else:
+                wav_list.append(cl.wav)
+                call_logs.append(cl)
+                # grapher_index = self.grapher.add(cl.wav)
+                # axes = self.grapher.plot(grapher_index)
 
-        self.grapher.add(wav_list)
-        axes = self.grapher._plot(range(len(wav_list)))
+        # TODO: change the grapher.WavPack interface to be less index-deuschy (and avoid all this malarky)
+        cl_dicts = dict((index, cl) for index,cl in zip(self.grapher.add(wav_list), call_logs))
+        axes_dicts = self.grapher._plot(cl_dicts.keys()) #[index for index in cl_dicts.keys()])
 
-        for ax in axes.values():
+        for ax, cl in zip(axes_dicts.values(), cl_dicts.values()):
             # parse .log files for prob computations
-            grapher.red_vline(ax, 5, label='SIP 200 OK')
+            grapher.red_vline(ax, cl.audio_connect_time, label='SIP 200 OK')
 
     def close_fig(self):
         self.grapher.close_all_figs

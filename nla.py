@@ -3,24 +3,27 @@
 # this is the front end script which should be run on a cpa-stats package
 
 # TODO:
-# -implement stats computation
+# -implement stats computation -> should make this the 'summary' property
 # -implement xml writer for lin_log_set
-# -implement signalling parser -> check travis' code
-# -implement wav file plotter
-# -check for ipython and boot if available, else print stats and gen packages?
 # -create a path index to quickly parse once nla front end has converted a package
+# -implement signalling parser -> check travis' code
+# DONE - implement wav file plotter
+# -check for ipython and boot if available, else print stats and gen packages?
 # -ask user if they would like to verify path index
+# - front end script to parse xmls and just spit out the disposition
+#   values (load into db?) if there is no csv to reference
+# - func which takes in a text file listing cids -> creates a subset
 
 # Ideas
 # done - create a seperate class CallLogs package
 # - os.walk instead of 'find' utility
 
 from imp import reload
-
 import sys, os, getopt, subprocess
 import xml.etree.ElementTree as ET
 import csv
 import shutil
+import os.path as path
 
 # custom modules
 import callset
@@ -53,7 +56,8 @@ This tool will generate the following packages in new directories when provided 
 - logs package prepped for offline NCA benchmark tool with audio recordings converted to lpcm
 
 Notes:
-  This tool relies heavily on ipython for practical use to efficiently analyze a log set.
+  This tool relies heavily on ipython in combination with the 'callset' module
+  for practical use to efficiently analyze a log set.
   If you don't have ipython installed then get it installed!
 
 Usage: ./nla.py <cpa-stats.csv> <logs directory>\n''')
@@ -97,18 +101,19 @@ def xml_log_update(log_obj):
         print("WARNING: the log set for '", log_obj.cid, "' does not seem to contain an xml file\n"
               "WARNING: unable to parse XML file in logs!\n")
     else:
-        f = log_obj.xml
-        tree =  ET.parse(f)
+        f    = log_obj.xml
+        tree = ET.parse(f)
         root = tree.getroot()
 
         # get the important children elements
         cdr = root.find("./CallDetailRecord")
-        ci = cdr.find("./CallInfo")
+        ci  = cdr.find("./CallInfo")
 
-        # parse the CallInfo
-        log_obj.audio_time = ci.find("./TimeFirstAudioPushed").text
-        log_obj.connect_time = ci.find("./TimeConnect").text
-        log_obj.modechange_time = ci.find("./TimeModeChange").text
+        # parse the numeric CallInfo
+        log_obj.audio_time         = float(ci.find("./TimeFirstAudioPushed").text)
+        log_obj.connect_time       = float(ci.find("./TimeConnect").text)
+        log_obj.modechange_time    = float(ci.find("./TimeModeChange").text)
+        log_obj.audio_connect_time = log_obj.connect_time - log_obj.audio_time
 
         # parse the rest of the CDR
         log_obj.cpa_result = cdr.find("./CPAResult").text
@@ -265,6 +270,7 @@ class LogPackage(object):
                     # search for log files in the file system using call-id field
                     cid = entry[self.cid_index]
                     log_list = scan_logs(cid, logs_dir)
+                    log_list = [path.abspath(l) for l in log_list]
 
                     if len(log_list) == 0:
                         print("WARNING : no log files found for cid :", cid)
@@ -365,24 +371,24 @@ if len(args) < 2:
 elif len(args) > 2:
     print("Error: excess args '%s ...'" % args[0])
     sys.exit(usage())
-
 else:
     csv_file = args[0]
     logs_dir = args[1]
 
-# handles
-global factory, cs
-
 # field value used to 'segment' sub-callsets in in the object interface
 disjoin_field  = nca_result
 
-# compile logs package into memory
+# compile logs package into memory (WARNING this creates new packages with duplicate data)
 logs = LogPackage(csv_file, logs_dir)
-# build a callset interface
-factory, cs = callset.new_callset(logs, disjoin_field)
+
+def load_cs():
+    # build a callset interface
+    return callset.new_callset(logs, disjoin_field)
+
+cs = load_cs()
 
 # HINT: to create a new subset try something like,
-# subset = factory.new_subset(parent, filter_function)
+# subset = cs.factory.new_subset(parent, filter_function)
 # where the filter_function is something like -> filter_by_field(3, gt, 500)
 # here 3 is field index, gt ('greater then') is a comparison function, 500 is a const to compare against
 # see callset.py for more details
