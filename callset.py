@@ -29,6 +29,7 @@ def field_select(index_itr):
 
 # equivalent of the above function but uses generic iterables as i/o
 # (which was the whole point of all this abstract fp nonsense in the first place!)
+# WARNING this yield items in order which they arrive not the order requested
 def iter_select(indices, itr):
     ind = [i for i in indices]
     for i, e in enumerate(itr):
@@ -53,14 +54,14 @@ def new_callset(log_package, disjoin_field):
 class CallSetFactory(object):
 
     def new_super(self, log_package, subset_field_tag):
-        cs = CallSet("super", subset_field_tag)
+        cs = CallSet("superset", subset_field_tag)
     #TODO: consider attaching the factory to the callset itself?
         cs.factory = self
         add_package_to_callset(cs, log_package)
 
         # allocate subsets and attach as attributes of the callset
         for s in cs._subset_tags.keys():
-            subset = self.new_subset(cs, filter_by_field(cs._subset_field_index, eq, str(s)))
+            subset = self.new_subset(str(s), cs, filter_by_field(cs._subset_field_index, eq, str(s)))
             self.attach_prop(cs, s, subset)
         return cs
 
@@ -71,12 +72,12 @@ class CallSetFactory(object):
         setattr(parent, name, prop)
 
     # gen a new subset to wrap the superset as an attribute
-    def new_subset(self, super_set, filter_f):
+    def new_subset(self, name_tag, super_set, filter_f):
 
             # using "containment and delegation"
             class SubSet(CallSet):
                 def __init__(self, super_set, filter_func):
-                    self._id = 'sub'    # seems like a hack (see CallSet.stats)-> polymorphic approach?
+                    self._id = name_tag # seems like a hack (see CallSet.stats)-> polymorphic approach?
                     self._parent = super_set
                     self._filter = filter_func
 
@@ -168,32 +169,32 @@ class CallSet(object):
     def plot(self, *indices):
 
         sip_log_list = []
-        wav_list = []
-        call_logs = []
+        cls          = {}
+        indices      = list(indices)
+        indices.sort()
 
         # TODO: allow for plotting 'ranges' of calls (i.e. 1 to 4 in steps of 1...etc)
-        for entry in self.select(indices):
+        for index, entry in zip(indices, self.select(indices)):
             cid = entry[self._cid_index]
-            # TODO: make sure that wavs is only a single file
+            # TODO: make sure that wavs is only a single file?
             cl = self._logs_pack.call_logs[cid]
             if cl.wav == None:
                 print("WARNING : no wave files were found for cid '",cid,"'")
             else:
-                wav_list.append(cl.wav)
-                call_logs.append(cl)
-                # grapher_index = self.grapher.add(cl.wav)
-                # axes = self.grapher.plot(grapher_index)
+                cls[index] = cl
+                print(cl.cid, 'has index', index)
 
-        if wav_list:
-            # TODO: change the grapher.WavPack interface to be less index-deuschy (and avoid all this malarky)
-            cl_dicts = dict((index, cl) for index,cl in zip(self.grapher.add(wav_list), call_logs))
-            axes_dicts = self.grapher._plot(cl_dicts.keys()) #[index for index in cl_dicts.keys()])
-
-            for ax, cl in zip(axes_dicts.values(), cl_dicts.values()):
+        if cls:
+            for ax, cs_index, cl in zip(self.grapher.itr_plot([cl.wav for cl in cls.values()]), cls.keys(), cls.values()):
+                ax.set_ylabel(str(self._id + " - " + str(cs_index)))
+                grapher.vline(ax, cl.audio_connect_time, label='200 OK')
                 # parse .log files for prob computations
-                grapher.red_vline(ax, cl.audio_connect_time, label='SIP 200 OK')
+
+            # pretty it up
+            self.grapher.prettify()
         else:
-            print("\nsorry can't plot calls with no audio...")
+            print("\nsorry no calls were found in subset '" + self._id + "' for indices:", indices)
+            print("-> see cs."+self._id+".show")
 
     def close_figure(self):
         self.grapher.close_all_figs
@@ -307,6 +308,7 @@ def printer(obj=None, fields=[], field_width=20, delim='|'):
         # use an infinite width generator
         widths = iter(lambda:field_width, 1)
 
+    # here a table is normally a list of lists or an iterable over one
     def printer_function(table):
 
         # mark as from parent scope
@@ -319,10 +321,6 @@ def printer(obj=None, fields=[], field_width=20, delim='|'):
         for f, w in zip(fields, widths):
             print('{field:<{width}}'.format(field=f, width=w), delim, '', end='')
         print('\n')
-
-        # here a table is normally a list of lists or an iterable over one
-        # TODO: use enumerate(table) instead for index
-        # row_index = 0  # for looks
 
         # print rows
         for row_index, row in enumerate(table):
@@ -390,7 +388,7 @@ det_nca_result = 'Detailed Cpd Result'
 # to remove in the wav files for sa package
 troublesome_suffix = '.analyzer-engine.0.0'
 
-# 'prepped' package names
+# 'prepared' log package names
 stats_anal_package = "./sa_package"
 tuning_dir         = "./tuning_logs_package"
 
@@ -533,13 +531,13 @@ class LogPackage(object):
     def load_logs(self, csv_file, logs_dir):
         """ load a new log package into memory """
 
-        # default config
+        # which packages to create? (default=both)
         gen_lin = gen_sa = True
 
         # check if log directory contains a log-index.xml file
         index_file = os.path.join(logs_dir, log_index_f_name)
         if os.path.isfile(index_file):
-            print("detected log index file : '", index_file, "'")
+            print("\ndetected log index file : '", index_file, "'")
 
             # a hack for now until I get time to pick a format for the index xml file
             with open(index_file) as f:
@@ -549,7 +547,7 @@ class LogPackage(object):
                     gen_sa = False
 
             # TODO: parse some kind of xml db file
-            print("\nCURRENTLY NOT IMPLEMENTED: should parse xml file here and populate the instance that way!")
+            print("THIS IS CURRENTLY NOT IMPLEMENTED: should parse xml file here and populate an instance that way!\n")
             # for list in xmlelement: (here xmelement is implemented by a generator)
             #     blah = CallLogs(list)
             pass
@@ -627,6 +625,7 @@ class LogPackage(object):
 
                     # TODO: use the "collections" module here?!
                     # keep track of max str lengths for each field
+                    # (used for pretty printing to the console)
                     for i, column in enumerate(entry):
                         if len(column) > self.field_widths[i]:
                             self.field_widths[i] = len(column)
@@ -634,7 +633,7 @@ class LogPackage(object):
                     # if all else is good add the entry to our db
                     self.entries.append(entry)
 
-            print(str(sum(self.cid_unfound.values())), "cids which did not have logs in the provided package")
+            print("->",str(sum(self.cid_unfound.values())), "cids which did not have logs in the provided package\n")
 
         except csv.Error as err:
             print('file %s, line %d: %s' % (csv_buffer, self._reader.line_num, err))

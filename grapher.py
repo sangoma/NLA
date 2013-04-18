@@ -26,14 +26,14 @@ class WavPack(object):
 
     def _loadwav(self, index):
         try:
+            print("loading wave file : ",path.basename(self.flist[index]))
             # should use the wave module instead?
             (self.fs, sig) = wavfile.read(self.flist[index])
             sig = sig/max(sig)
             self._vectors[index] = sig
-            print("loaded wave file : ",path.basename(self.flist[index]))
             print("|->",len(sig),"samples =",len(sig)/self.fs,"seconds @ ",self.fs," Hz")
         except:
-            print("Failed to open wave file for plotting!\nEnsure that the wave file is in LPCM format!")
+            print("Failed to open wave file for plotting!\nEnsure that the wave file exists and is in LPCM format!")
 
     @property
     def show(self):
@@ -44,11 +44,6 @@ class WavPack(object):
     def close_all_figs(self):
         plt.close('all')
         self.fig = None
-
-    # @property
-    # def close_fig(self):
-    #     # plt.close(
-    #     self.fig = None
 
     @property
     def free_cache(self):
@@ -87,26 +82,50 @@ class WavPack(object):
         if type(paths) == str:
             if path.exists(paths) and paths not in self.flist:
                 self.flist.append(paths)
-                return [self.flist.index(paths)]
+                return self.flist.index(paths)
             else:
                 raise ValueError("path string not valid?!")
         # a sequence of paths? -> create a generator for returning indices
         else:
             for p in paths:
-                if p not in self.flist:
+                if path.exists(p) and p not in self.flist:
                     self.flist.append(p)
                     self._vectors[self.flist.index(p)] = None
                 else:
-                    print(path.basename(p), "is already in our path list? -> see grapher.WavPack.show")
+                    print(path.basename(p), "is already in our path list or is not a dir! -> see grapher.WavPack.show")
 
                 # indices.append(self.flist.index(p))
             # return indices
                 yield self.flist.index(p)
 
-    def plot(self, *indices):
-        self._plot(indices)
+    # cli friendly plot by flist index
+    # def iplot(self, *indices):
+    #     axes_dict = {self._plot(indices)}
 
-    def _plot(self, index_itr, start_time=0, samefig=True):
+    # def set_vline(self):
+    #     return lambda: vline
+
+    def prettify(self):
+        # tighten up the margins
+        self.fig.tight_layout(pad=1.03)
+
+    # def plot(self, *indices)
+    #     axes = []
+    #     for 
+
+    # a lazy plotter to save aux space
+    def itr_plot(self, items):
+        wp_indices = [elem for elem in items if type(elem) == int]
+
+        if len(wp_indices) == 0:
+        # (i.e. if not ints)
+            for i in self.add(items):
+                wp_indices.append(i)
+
+        for axis in self._plot(wp_indices):
+            yield axis
+
+    def _plot(self, index_itr, start_time=0, samefig=True, title=None):
         axes = {}
         if type(index_itr) != 'list':
             indices = [i for i in index_itr]
@@ -115,17 +134,10 @@ class WavPack(object):
         if not samefig or not self.fig:
             self.fig = plt.figure()
             self.mng = plt.get_current_fig_manager()
-
-            # old way to adjust margins
-            # h_margin_l = 0.12
-            # h_margin_r = 1 - h_margin_l
-            # v_margin_b = 0.12
-            # v_margin_t = 1 - v_margin_b
-            # self.fig.subplots_adjust(left=h_margin_l, right=h_margin_r, bottom=v_margin_b, top=v_margin_t)
         else:
             self.fig.clf()
 
-        # set window to half screen size if only one signal to plot
+        # set window to half screen size if only one signal
         if len(indices) < 2:
             h = self.h/2
         else:
@@ -141,14 +153,19 @@ class WavPack(object):
 
             ax = self.fig.add_subplot(len(indices), 1, icount + 1)
             ax.plot(t, self.vector(i), figure=self.fig)
-            ax.set_title(path.basename(self.flist[i]))
-            ax.set_ylabel(i)
-            ax.set_xlabel('Time (s)')
-            axes[i] = ax
 
-        # tighten up the margins
-        self.fig.tight_layout(pad=1.03)
-        return axes
+            if title == None:
+                ax.set_title(path.basename(self.flist[i]))
+            else:
+                ax.set_title(title)
+
+            ax.set_xlabel('Time (s)')
+            # axes[i] = ax
+            yield ax
+
+            # # tighten up the margins
+            # self.fig.tight_layout(pad=1.03)
+        # return axes
 
     # @property
     # def figure():
@@ -160,16 +177,16 @@ class WavPack(object):
             self._vectors[i] = None
         print("found", len(self.flist), "files")
 
-def red_vline(axes, time, label='this is a line?'):
+def vline(axes, time, label='this is a line?', colour='r'):
 
     # add a vertical line
-    axes.axvline(x=time, color='r')
+    axes.axvline(x=time, color=colour)
     hfrac = float(time)
     # add a label to the line
     axes.annotate(label,
                   xy=(time, 1),
                   xycoords='data',
-                  xytext=(5, -10),
+                  xytext=(3, -10),
                   textcoords='offset points')
                   # arrowprops=dict(facecolor='black', shrink=0.05),
                   # horizontalalignment='right', verticalalignment='bottom')

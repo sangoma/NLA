@@ -68,11 +68,14 @@ disjoin_field  = 'NCA Engine Result'
 # compile logs package into memory (WARNING this creates new packages with duplicate data)
 logs = callset.LogPackage(csv_file, logs_dir)
 
-def load_cs():
+cs = None
+def reload_cs(cs=cs):
     # build a callset interface
+    if cs is not None:
+        del cs
     return callset.new_callset(logs, disjoin_field)
 
-cs = load_cs()
+cs = reload_cs()
 
 # HINT: to create a new subset try something like,
 # subset = cs.factory.new_subset(parent, filter_function)
