@@ -9,6 +9,7 @@ import csv
 stats_anal_package = "./sa_package"
 filtered_logs_package = "./filtered_logs_set"
 zipfile = "stats_analyzer_package.zip"
+output_csv = "cpa-stats.csv"
 
 # to remove in the wav files for sa package
 suffix = '.analyzer-engine.0.0'
@@ -65,14 +66,23 @@ elif len(args) > 2:
 csv_file = args[0]
 search_dir = args[1]
 
+print("creating output csv file: '" + output_csv + "'\n")
+oc = open(output_csv, 'wb+')
+csv_writer = csv.writer(oc)
+
 # open csv and start gathering logs
 print("opening csv file: '" + csv_file + "'\n")
 
 with open(csv_file) as csv_buffer:
 
     reader = csv.reader(csv_buffer)
+
     title = next(reader)
+    csv_writer.writerow(title)
+
     fields = next(reader)
+    csv_writer.writerow(fields)
+
     length = 0
     wavcount = 0
 
@@ -107,9 +117,10 @@ with open(csv_file) as csv_buffer:
                 continue
 
         if len(wavs) == 0:
-            print("no WAVE files found!...skipping call: '" + row[0] +"'")
-            continue
+            print("no WAVE files found! call: '" + row[0] +"'")
+            # continue
         else:
+
             wavcount += 1
             # sort in place
             wavs.sort()
@@ -129,13 +140,21 @@ with open(csv_file) as csv_buffer:
             path_to_file = '/'.join([filtered_logs_package, os.path.basename(wavs[0])])
             retcode = subprocess.call(["sox"] + combine_flag + wavs + ["-b", "16", "-e", "signed", path_to_file])
 
-        for entry in logs:
-            shutil.copy(entry, stats_anal_package)
-            shutil.copy(entry, filtered_logs_package)
+        if len(logs) > 0:
+            # add this row to our package csv
+            csv_writer.writerow(row)
 
+            for entry in logs:
+                shutil.copy(entry, stats_anal_package)
+                shutil.copy(entry, filtered_logs_package)
+        else:
+            print("no log files found! call '" + row[0] + "'")
+
+#close out the new csv
+oc.close()
 # copy csv to each package
-shutil.copy(csv_file, '/'.join([stats_anal_package, "cpa-stats.csv"]))
-shutil.copy(csv_file, filtered_logs_package)
+shutil.copy(output_csv, '/'.join([stats_anal_package, "cpa-stats.csv"]))
+shutil.copy(output_csv, filtered_logs_package)
 
 print("")
 print(str(length) + " call ids were parsed from " + csv_file)
