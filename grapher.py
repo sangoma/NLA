@@ -5,6 +5,7 @@
 # - consider moving sox coversion to be in this module so we can open
 # arbitrarly formatted audio files into numpy arrays
 
+from imp import reload
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.io import wavfile
@@ -13,8 +14,6 @@ from scipy.io import wavfile
 
 import subprocess, os
 import os.path as path
-
-# abspath = lambda paths_itr : map(path.abspath, paths_itr)
 
 class WavPack(object):
     def __init__(self, wave_file_list):
@@ -40,7 +39,6 @@ class WavPack(object):
         '''just a pretty printer for the internal path list'''
         print_table(map(path.basename, self.flist))
 
-    @property
     def close_all_figs(self):
         plt.close('all')
         self.fig = None
@@ -68,7 +66,6 @@ class WavPack(object):
 
         # request for an index which doesn't reference a path
         elif index not in self._vectors.keys():
-        # if index + 1 > len(self.flist):
             print("Error: you requested an index out of range!")
             raise ValueError("no file path exists for index : " + str(index) + " see WavPack.show")
         else:
@@ -85,7 +82,8 @@ class WavPack(object):
                 return self.flist.index(paths)
             else:
                 raise ValueError("path string not valid?!")
-        # a sequence of paths? -> create a generator for returning indices
+
+        # a sequence of paths? -> generate look-up indices
         else:
             for p in paths:
                 if path.exists(p) and p not in self.flist:
@@ -94,24 +92,23 @@ class WavPack(object):
                 else:
                     print(path.basename(p), "is already in our path list or is not a dir! -> see grapher.WavPack.show")
 
-                # indices.append(self.flist.index(p))
-            # return indices
                 yield self.flist.index(p)
-
-    # cli friendly plot by flist index
-    # def iplot(self, *indices):
-    #     axes_dict = {self._plot(indices)}
-
-    # def set_vline(self):
-    #     return lambda: vline
 
     def prettify(self):
         # tighten up the margins
         self.fig.tight_layout(pad=1.03)
 
-    # def plot(self, *indices)
-    #     axes = []
-    #     for 
+    def plot(self, *indices):
+        axes = []
+        wp_indices = [elem for elem in indices if type(elem) == int]
+
+        if len(wp_indices) == 0:
+            print("ERROR: you must specify integer indices which correspond to paths in self.flist")
+        else:
+            # return [axis for axis in self._plot(wp_indices)]
+            for axis in self._plot(wp_indices):
+                axes.append(axis)
+
 
     # a lazy plotter to save aux space
     def itr_plot(self, items):
@@ -125,6 +122,7 @@ class WavPack(object):
         for axis in self._plot(wp_indices):
             yield axis
 
+    # plot generator - uses 'makes sense' figure / axes settings
     def _plot(self, index_itr, start_time=0, samefig=True, title=None):
         axes = {}
         if type(index_itr) != 'list':
@@ -154,22 +152,19 @@ class WavPack(object):
             ax = self.fig.add_subplot(len(indices), 1, icount + 1)
             ax.plot(t, self.vector(i), figure=self.fig)
 
-            if title == None:
-                ax.set_title(path.basename(self.flist[i]))
-            else:
-                ax.set_title(title)
+            font_style = dict(size='small')
 
-            ax.set_xlabel('Time (s)')
-            # axes[i] = ax
+            if title == None:
+                ax.set_title(path.basename(self.flist[i]), fontdict=font_style)
+            else:
+                ax.set_title(title, fontdict=font_style)
+
+            ax.set_xlabel('Time (s)', fontdict=font_style)
             yield ax
 
-            # # tighten up the margins
-            # self.fig.tight_layout(pad=1.03)
-        # return axes
-
-    # @property
-    # def figure():
-    #     return self.fig
+    @property
+    def get_figure():
+        return self.fig
 
     def find_wavs(self, sdir):
         self.flist = file_scan('.*\.wav$', sdir)
@@ -181,7 +176,6 @@ def vline(axes, time, label='this is a line?', colour='r'):
 
     # add a vertical line
     axes.axvline(x=time, color=colour)
-    hfrac = float(time)
     # add a label to the line
     axes.annotate(label,
                   xy=(time, 1),
@@ -244,27 +238,12 @@ def scr_dim():
     dims = bres.decode().strip('\n').split(sep='x')  # left associative
     return tuple([i for i in map(int, dims)])
 
-# pretty sure this doesn't work as the guy who wrote it is aweful at math
-def adjustFigAspect(fig,aspect=1):
-    '''
-    Adjust the subplot parameters so that the figure has the correct aspect ratio.
-    '''
-    xsize,ysize = fig.get_size_inches()
-    minsize = min(xsize,ysize)
-    xlim = .4*minsize/xsize
-    ylim = .4*minsize/ysize
-    if aspect < 1:
-        xlim *= aspect
-    else:
-        ylim /= aspect
-
-    fig.subplots_adjust(left   = .5-xlim,
-                        right  = .5+xlim,
-                        bottom = .5-ylim,
-                        top    = .5+ylim)
-
 def test():
+    # example how to use the lazy plotter
     wp = WavPack([])
     wp.find_wavs('/home/tyler/code/python/wavs/')
     wp.plot(0)
     return wp
+
+if __name__ == '__main__':
+    wp = test()
