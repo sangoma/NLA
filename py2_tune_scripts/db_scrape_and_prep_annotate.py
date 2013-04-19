@@ -62,7 +62,7 @@ def gen_annotate_package(filename, result_class, query_list):
                     # flag the padded files
                     name = "zeropad-" + name
 
-                path_to_file = '/'.join([package_dir, name])
+                path_to_file = os.path.join(package_dir, name)
 
                 # if it's a wave file
                 if extension == ".wav" :
@@ -78,7 +78,7 @@ def gen_annotate_package(filename, result_class, query_list):
                         shutil.copyfile(entry, path_to_file) 
 
                     # write the xargs parsible file
-                    f.write(name + "\n")
+                    f.write(path_to_file + "\n")
 
                 # if it's a log file
                 elif extension:
