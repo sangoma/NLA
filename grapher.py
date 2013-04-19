@@ -152,7 +152,7 @@ class WavPack(object):
             ax = self.fig.add_subplot(len(indices), 1, icount + 1)
             ax.plot(t, self.vector(i), figure=self.fig)
 
-            font_style = dict(size='small')
+            font_style = {size : 'small'}
 
             if title == None:
                 ax.set_title(path.basename(self.flist[i]), fontdict=font_style)

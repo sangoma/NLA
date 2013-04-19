@@ -113,7 +113,6 @@ class CallSet(object):
         self._entries = []
         self._destinations = set()
         self.grapher = grapher.WavPack([])
-        # self._log_paths = {}
 
     def _reload(self):
         self._dup_dest = 0
@@ -222,13 +221,6 @@ class CallSet(object):
         #consider?
         # return sum(itertools.count() for i in self._entries)
 
-    # @property
-    # def graph(self): return self._grapher
-    # @graph.
-    # def graph(
-    #     pass
-
-
 def add_package_to_callset(callset, logs_package):
     '''populate a callset from a logs package'''
 
@@ -250,9 +242,6 @@ def add_package_to_callset(callset, logs_package):
 
         # find the index of the field to use as the 'disjoint union tag'
         callset._subset_field_index = callset._fields.index(callset.subset_field_tag)
-
-        # callset._log_paths    = logs_package.log_paths
-        # callset._entries   = logs_package.entries
 
     # compile a list of unique call entries
     print("processing logs package into a callset...")
