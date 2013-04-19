@@ -7,7 +7,7 @@ import csv
 
 # package names
 stats_anal_package = "./sa_package"
-filtered_logs_package = "./filtered_logs_set"
+filtered_logs_package = "./tuning_logs_package"
 zipfile = "stats_analyzer_package.zip"
 output_csv = "cpa-stats.csv"
 
