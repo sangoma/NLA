@@ -77,7 +77,7 @@ class CallSetFactory(object):
             # using "containment and delegation"
             class SubSet(CallSet):
                 def __init__(self, super_set, filter_func):
-                    self._id = name_tag # seems like a hack (see CallSet.stats)-> polymorphic approach?
+                    self._id = name_tag # seems like a hack (see CallSet.summary())-> polymorphic approach?
                     self._parent = super_set
                     self._filter = filter_func
 
@@ -96,39 +96,43 @@ class CallSet(object):
     def __init__(self, callset_id, subset_field_tag):
 
         print("assigning callset id: '" + str(callset_id) + "'")
-        self._id = callset_id
-        self.subset_field_tag = subset_field_tag
+        self._id                 = callset_id
+        self.subset_field_tag    = subset_field_tag
         self._subset_field_index = int()
-        self._subset_tags = {}
-        self._field_mask = []   # map this over the entries for printing
-        self._mask_indices = []
+        self._subset_tags        = {}
+        self._field_mask         = []   # map this over the entries for printing
+        self._mask_indices       = []
 
         # counters
-        self._dup_dest = 0
+        self._dup_dest    = 0
         self._cid_unfound = {}
 
         # "members" of this call set
-        self._logs_pack = None
-        self._fields = []
-        self._entries = []
+        self._logs_pack    = None
+        self._fields       = []
+        self._entries      = []
         self._destinations = set()
-        self.grapher = grapher.WavPack([])
+        self.grapher       = grapher.SigPack([])
 
     def _reload(self):
-        self._dup_dest = 0
+        self._dup_dest = 0#{{{
         self._entries.clear()
         self._destinations.clear()
         add_package_to_callset(self, self._logs_pack)
-        self.grapher.reset_cache()
+        self.grapher.reset_cache()#}}}
 
     def select(self, index_itr):
         '''takes in an iterable of indices to select entries from the callset and
         returns a list of the requested entries'''
         return iter_select(index_itr, self._entries)
 
+    def entry(self, index):
+        '''access a single entry from the table'''
+        return [e for e in self.select([index])]
+
     def islice(self, start, *stop_step):
         """Access a range of callset entries"""
-        # TODO: eventually make this print pretty?
+        # TODO: eventually make this print pretty?#{{{
         # print('start = ', start)
         stop = start + 1
         step = None
@@ -137,7 +141,7 @@ class CallSet(object):
             if len(stop_step) == 2:
                 step = stop_step[1]
 
-        return itertools.islice(self._entries, start, stop, step)
+        return itertools.islice(self._entries, start, stop, step)#}}}
 
     def write(self):
         '''write out current data objects as to a CPA package'''
@@ -155,11 +159,15 @@ class CallSet(object):
         if field == None and type(self) == CallSet:
 
             #TODO: abstract this such that we cycle through all the subsets of this callset instead of a silly dict?
-            table = [[field, count, '{0:.4f}'.format(float(count/self.length))] for field, count in self._subset_tags.items()]
+            print(type(self))
+            subsets = (ss for ss in vars(self) if type(ss) == SubSet)
+            table = [[ss._id, ss.length, '{0:.4f}'.format(float(ss.length/self.length))] for ss in subsets]
+            # table = [[field, count, '{0:.4f}'.format(float(count/self.length))] for field, count in self._subset_tags.items()]
             table.sort(key=lambda lst: lst[1], reverse=True)
             print_stats_w20(table)
         else:
             # TODO: use the "collections" module here!?!?
+            print("summary not yet supported for non-supersets...")
             pass
             # do crazy iterable summing stuff...
 
@@ -196,7 +204,7 @@ class CallSet(object):
             print("-> see cs."+self._id+".show")
 
     def close_figure(self):
-        self.grapher.close_all_figs
+        self.grapher.close_all_figs()
 
     @property
     def _display_fields(self):
@@ -347,16 +355,14 @@ def ring_in_precon(audiofile):
 # #######################
 
 # TODO:
-# -implement stats computation -> should make this the 'summary' property
-# -implement xml writer for lin_log_set
-# -create a path index to quickly parse once nla front end has converted a package
-# -implement signalling parser -> check travis' code
+# DONE - implement stats computation -> should make this the 'summary' property
+# - create a path index to quickly parse once nla front end has converted a package
+# - implement signalling log parser -> check travis' code
 # DONE - implement wav file plotter
-# -check for ipython and boot if available, else print stats and gen packages?
-# -ask user if they would like to verify path index
-# - front end script to parse xmls and just spit out the disposition
-#   values (load into db?) if there is no csv to reference
-# - func which takes in a text file listing cids -> creates a subset
+# - check for ipython and boot if available, else print stats and gen packages?
+# - ask user if they would like to verify path index?
+# - front end script to parse xmls and just spit out the disposition values (load into db?) if there is no csv to reference
+# - func which takes in a text file listing cids -> creates a subset (determine csv vs. .txt in nla part?
 
 # Ideas
 # done - create a seperate class CallLogs package
