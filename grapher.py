@@ -8,36 +8,47 @@
 from imp import reload
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.io import wavfile
+import wave
+#from scipy.io import wavfile
 # from scipy import signal
 # from scipy import fftpack
 
 import subprocess, os
 import os.path as path
 
-class WavPack(object):
+class SigPack(object):
     def __init__(self, wave_file_list):
         self.flist = []
         self._vectors = {}
         self.fig = None
         self.add(wave_file_list)
+
+        # TODO: make scr_dim impl more pythonic
         self.w, self.h = scr_dim()
 
-    def _loadwav(self, index):
+    def _loadsig(self, index):
         try:
             print("loading wave file : ",path.basename(self.flist[index]))
-            # should use the wave module instead?
-            (self.fs, sig) = wavfile.read(self.flist[index])
-            sig = sig/max(sig)
+
+            # read audio data and params
+            sig, self.fs, self.bd = wav_2_np(self.flist[index])
+            # (self.fs, sig) = wavfile.read(self.flist[index])
+
+            amax = 2**(self.bd - 1) - 1
+            sig = sig/amax
             self._vectors[index] = sig
             print("|->",len(sig),"samples =",len(sig)/self.fs,"seconds @ ",self.fs," Hz")
         except:
-            print("Failed to open wave file for plotting!\nEnsure that the wave file exists and is in LPCM format!")
+            print("E: Failed to open wave file for plotting!\nEnsure that the wave file exists and is in LPCM format!")
 
     @property
     def show(self):
         '''just a pretty printer for the internal path list'''
-        print_table(map(path.basename, self.flist))
+        #FIXME: throw an error if table is empty
+        if self.flist:
+            print_table(map(path.basename, self.flist))
+        else:
+            print("E: no file list exists yet!?...")
 
     def close_all_figs(self):
         plt.close('all')
@@ -59,40 +70,36 @@ class WavPack(object):
             # print("the file ", self.flist[index], "is already cached in _vectors dict!")
             return self._vectors[index]
 
-        # path exists but vector no yet loaded
+        # path exists but vector not yet loaded
         elif self._vectors.get(index) == None:
-            self._loadwav(index)
+            self._loadsig(index)
             return self._vectors[index]
 
         # request for an index which doesn't reference a path
         elif index not in self._vectors.keys():
             print("Error: you requested an index out of range!")
-            raise ValueError("no file path exists for index : " + str(index) + " see WavPack.show")
+            raise ValueError("no file path exists for index : " + str(index) + " see SigPack.show")
         else:
             raise ValueError("weird stuffs happening heres!")
 
     def add(self, paths):
-        '''Add a wave file path to the WavPack.\n
+        '''Add a wave file path to the SigPack.\n
         Can take a single path or a sequence of paths as input'''
         indices = []
-        # could be a single path string
-        if type(paths) == str:
-            if path.exists(paths) and paths not in self.flist:
-                self.flist.append(paths)
-                return self.flist.index(paths)
-            else:
-                raise ValueError("path string not valid?!")
+        paths = iter(paths) # always make paths an iterable
 
         # a sequence of paths? -> generate look-up indices
-        else:
-            for p in paths:
-                if path.exists(p) and p not in self.flist:
+        for p in paths:
+            if path.exists(p):
+                if p not in self.flist:
                     self.flist.append(p)
                     self._vectors[self.flist.index(p)] = None
                 else:
-                    print(path.basename(p), "is already in our path list or is not a dir! -> see grapher.WavPack.show")
+                    print(path.basename(p), "is already in our path list -> see grapher.SigPack.show")
+            else:
+                raise ValueError("path string not valid?!")
 
-                yield self.flist.index(p)
+            yield self.flist.index(p)
 
     def prettify(self):
         # tighten up the margins
@@ -103,15 +110,16 @@ class WavPack(object):
         wp_indices = [elem for elem in indices if type(elem) == int]
 
         if len(wp_indices) == 0:
-            print("ERROR: you must specify integer indices which correspond to paths in self.flist")
+            print("E: you must specify integer indices which correspond to paths in self.flist\n"
+                  "see self.show for listing")
         else:
-            # return [axis for axis in self._plot(wp_indices)]
-            for axis in self._plot(wp_indices):
-                axes.append(axis)
+            return [axis for axis in self._plot(wp_indices)]
+            # for axis in self._plot(wp_indices):
+            #     axes.append(axis)
 
-
-    # a lazy plotter to save aux space
+    # a lazy plotter to save aux space?
     def itr_plot(self, items):
+        # if they're simple indices compile them now
         wp_indices = [elem for elem in items if type(elem) == int]
 
         if len(wp_indices) == 0:
@@ -140,19 +148,23 @@ class WavPack(object):
             h = self.h/2
         else:
             h = self.h
-        self.mng.resize(self.w, h)
-            # self.fig.set_size_inches(10,2)
-
+        try:
+            self.mng.resize(self.w, h)
+        except:
+            raise "unable to resize windows!?"
+        # self.fig.set_size_inches(10,2)
         # self.fig.tight_layout()
 
         for icount, i in enumerate(indices):
 
-            t = np.arange(start_time, len(self.vector(i)) / self.fs, 1/self.fs)
+            # t = np.arange(start_time, len(self.vector(i)) / self.fs, 1/self.fs)
+            t = np.linspace(start_time, len(self.vector(i)) / self.fs, num=len(self.vector(i)))
+            # print("size of t is ", len(t))
 
             ax = self.fig.add_subplot(len(indices), 1, icount + 1)
             ax.plot(t, self.vector(i), figure=self.fig)
 
-            font_style = {size : 'small'}
+            font_style = {'size' : 'small'}
 
             if title == None:
                 ax.set_title(path.basename(self.flist[i]), fontdict=font_style)
@@ -229,6 +241,18 @@ def file_scan(re_literal, search_dir, method='find'):
     else:
         print("no other logs scanning method currentlyl exists!")
 
+def wav_2_np(f):
+    ''' use the wave module to make a np array'''
+    wf = wave.open(f, 'r')
+    fs = wf.getframerate()
+    bd = wf.getsampwidth() * 8  # bit depth calc
+    frames = wf.readframes(wf.getnframes())
+    # hack to read data using array protocol type strings
+    dt = np.dtype('i' + str(wf.getsampwidth()))
+    sig = np.fromstring(frames, dtype=dt)
+    wf.close()
+    return (sig, fs, bd)
+
 def scr_dim():
     #TODO: find a more elegant way of doing this...say using
     # figure.get_size_inches()
@@ -240,9 +264,9 @@ def scr_dim():
 
 def test():
     # example how to use the lazy plotter
-    wp = WavPack([])
+    wp = SigPack([])
     wp.find_wavs('/home/tyler/code/python/wavs/')
-    wp.plot(0)
+    # wp.plot(0)
     return wp
 
 if __name__ == '__main__':
