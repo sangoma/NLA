@@ -1,6 +1,5 @@
 # call set interface
 # Python3 implementation
-
 import itertools
 import grapher
 
@@ -19,7 +18,8 @@ def filter_by_field(field_index, filter_func, value):
 
 '''example filters which can be applied to a callset._entries :
     am_f    = filter_by_field(5, eq, "Answering-Machine")
-    human_f = filter_by_field(5, eq, "Human")'''
+    human_f = filter_by_field(5, eq, "Human")
+    -> filters like these are created dynamically for a callset callset'''
 
 # select specific fields from a subscriptable container
 # this function will usually be applied over the 'parent' container/iterable
@@ -27,9 +27,9 @@ def field_select(index_itr):
     return lambda container: (container[index] for index in index_itr)
     # return lambda container: [container[index] for index in index_itr]
 
-# equivalent of the above function but uses generic iterables as i/o
+# equivalent of the above function but with generic iterables as i/o
 # (which was the whole point of all this abstract fp nonsense in the first place!)
-# WARNING this yield items in order which they arrive not the order requested
+# WARNING this yields items in order which they arrive from 'itr', NOT the order requested
 def iter_select(indices, itr):
     ind = [i for i in indices]
     for i, e in enumerate(itr):
@@ -52,7 +52,6 @@ def new_callset(log_package, disjoin_field):
 
 # use a factory design pattern you fool!
 class CallSetFactory(object):
-
     def new_super(self, log_package, subset_field_tag):
         cs = CallSet("superset", subset_field_tag)
     #TODO: consider attaching the factory to the callset itself?
@@ -73,23 +72,8 @@ class CallSetFactory(object):
 
     # gen a new subset to wrap the superset as an attribute
     def new_subset(self, name_tag, super_set, filter_f):
+            return SubSet(name_tag, super_set, filter_f)
 
-            # using "containment and delegation"
-            class SubSet(CallSet):
-                def __init__(self, super_set, filter_func):
-                    self._id = name_tag # seems like a hack (see CallSet.summary())-> polymorphic approach?
-                    self._parent = super_set
-                    self._filter = filter_func
-
-                def __getattr__(self, attr):
-                   return getattr(self._parent, attr)
-
-                # filter the parent set using the filtering function
-                @property
-                def _entries(self):
-                    return self._filter(self._parent._entries)
-
-            return SubSet(super_set, filter_f)
 
 class CallSet(object):
 
@@ -157,12 +141,9 @@ class CallSet(object):
 
     def summary(self, field=None):
         if field == None and type(self) == CallSet:
-
-            #TODO: abstract this such that we cycle through all the subsets of this callset instead of a silly dict?
-            print(type(self))
-            subsets = (ss for ss in vars(self) if type(ss) == SubSet)
+            #TODO: keep an internal data element (set?) which holds the subset references?
+            subsets = (ss for ss in vars(self).values() if type(ss) == SubSet)
             table = [[ss._id, ss.length, '{0:.4f}'.format(float(ss.length/self.length))] for ss in subsets]
-            # table = [[field, count, '{0:.4f}'.format(float(count/self.length))] for field, count in self._subset_tags.items()]
             table.sort(key=lambda lst: lst[1], reverse=True)
             print_stats_w20(table)
         else:
@@ -229,6 +210,22 @@ class CallSet(object):
         #consider?
         # return sum(itertools.count() for i in self._entries)
 
+# using "containment and delegation"
+class SubSet(CallSet):
+    def __init__(self, name, super_set, filter_func):
+        self._id = name # seems like a hack (see CallSet.summary())-> polymorphic approach?
+        self._parent = super_set
+        self._filter = filter_func
+
+    def __getattr__(self, attr):
+       return getattr(self._parent, attr)
+
+    # provide a subset of the parent's items using the filtering function
+    @property
+    def _entries(self):
+        return self._filter(self._parent._entries)
+
+# CallSet utils
 def add_package_to_callset(callset, logs_package):
     '''populate a callset from a logs package'''
 
@@ -282,8 +279,6 @@ def add_package_to_callset(callset, logs_package):
     print(str(callset._dup_dest), "duplicate phone number destinations found!")
     print("\n->",callset.__class__.__name__, "instance created!\n"
           "type: cs.<tab> to see available properties")
-
-# CallSet utils
 
 #TODO: consider making this a direct function instead of a closure
 def printer(obj=None, fields=[], field_width=20, delim='|'):
