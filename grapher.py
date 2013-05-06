@@ -184,19 +184,32 @@ class SigPack(object):
             self._vectors[i] = None
         print("found", len(self.flist), "files")
 
-def vline(axes, time, label='this is a line?', colour='r'):
+def vline(axis, time, label='this is a line?', colour='r'):
+
+    # use ylim for annotation placement
+    mx = max(axis.get_ylim())
 
     # add a vertical line
-    axes.axvline(x=time, color=colour)
+    axis.axvline(x=time, color=colour)
     # add a label to the line
-    axes.annotate(label,
-                  xy=(time, 1),
+    axis.annotate(label,
+                  xy=(time, mx),
                   xycoords='data',
                   xytext=(3, -10),
                   textcoords='offset points')
                   # arrowprops=dict(facecolor='black', shrink=0.05),
                   # horizontalalignment='right', verticalalignment='bottom')
-    return axes
+    return axis
+
+def line_max_y(axis):
+    # use max value from the available lines for annotation placement
+    lines = axis.get_lines()
+    mx = 0
+    for line in lines:
+        lm = max(line.get_ydata())
+        if lm > mx:
+            mx = lm
+    return mx
 
 def print_table(itr, field_header=['wave files'], delim='|'):
 
