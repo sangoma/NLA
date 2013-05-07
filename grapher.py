@@ -37,9 +37,9 @@ class SigPack(object):
             amax = 2**(self.bd - 1) - 1
             sig = sig/amax
             self._vectors[index] = sig
-            print("|->",len(sig),"samples =",len(sig)/self.fs,"seconds @ ",self.fs," Hz")
+            print("INFO |->",len(sig),"samples =",len(sig)/self.fs,"seconds @ ",self.fs," Hz")
         except:
-            print("E: Failed to open wave file for plotting!\nEnsure that the wave file exists and is in LPCM format!")
+            raise Exception("E: Failed to open wave file for plotting!\nEnsure that the wave file exists and is in LPCM format!")
 
     @property
     def show(self):

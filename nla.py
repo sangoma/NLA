@@ -77,6 +77,12 @@ def reload_cs(cs=cs):
 
 cs = reload_cs()
 
+print("\nattempting to start ipython shell...\n")
+try: from IPython import embed
+except ImportError as imperr : print(imperr)
+# this call anywhere in your program will start IPython
+embed()
+
 # HINT: to create a new subset try something like,
 # subset = cs.factory.new_subset(parent, filter_function)
 # where the filter_function is something like -> filter_by_field(3, gt, 500)
