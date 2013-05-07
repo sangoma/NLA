@@ -1,5 +1,19 @@
 # call set interface
 # Python3 implementation
+
+# MASTER TODO:
+# DONE - use the ipython %edit to open log files directly by callset indices
+# DONE - implement stats computation -> should make this the 'summary' property
+# - create a path index to quickly parse once nla front end has converted a package
+# - implement signalling log parser -> check travis' code
+# DONE - implement wav file plotter
+# DONE - check for ipython and boot if available, else print stats and gen packages?
+# - ask user if they would like to verify path index?
+# - front end script to parse xmls and just spit out the disposition values (load into db?) if there is no csv to reference
+# - func which takes in a text file listing cids -> creates a subset (determine csv vs. .txt in nla part?
+# DONE - create a seperate class CallLogs package
+# - os.walk instead of 'find' utility
+
 import itertools
 import grapher
 
@@ -91,7 +105,7 @@ class CallSet(object):
         self._dup_dest    = 0
         self._cid_unfound = {}
 
-        # "members" of this call set
+        # "placeholders" of this call set
         self._logs_pack    = None
         self._fields       = []
         self._entries      = []
@@ -107,12 +121,17 @@ class CallSet(object):
 
     def select(self, index_itr):
         '''takes in an iterable of indices to select entries from the callset and
-        returns a list of the requested entries'''
+        lazily returns a list of the requested entries'''
         return iter_select(index_itr, self._entries)
 
     def entry(self, index):
         '''access a single entry from the table'''
-        return [e for e in self.select([index])]
+        l = [e for e in self.select([index])]
+        return l[0]
+
+    def logs(self, index):
+        cid = self.entry(index)[self._cid_index]
+        return self._logs_pack.call_logs[cid]
 
     def islice(self, start, *stop_step):
         """Access a range of callset entries"""
@@ -131,7 +150,7 @@ class CallSet(object):
         '''write out current data objects as to a CPA package'''
         write_package()
 
-    # search for a call based on field, string pair
+    # TODO: search for a call based on field, string pair
     def find(self, pos):
         pass
 
@@ -167,7 +186,7 @@ class CallSet(object):
             # TODO: make sure that wavs is only a single file?
             cl = self._logs_pack.call_logs[cid]
             if cl.wav == None:
-                print("WARNING : no wave files were found for cid '",cid,"'")
+                print("WARNING : no wave files were found for cid",cid)
             else:
                 cls[index] = cl
                 print(cl.cid, 'has index', index)
@@ -253,25 +272,23 @@ def add_package_to_callset(callset, logs_package):
     for entry in logs_package.entries:
         phone_num = entry[callset._phone_index]
 
-        # if we've already seen this phone number then remove the entry
+        # if we've already seen this phone number then skip the entry
         if phone_num in callset._destinations:
             callset._dup_dest += 1
-            # callset._entries.remove(entry)
-            next
+            continue
         else:
             # add destination phone number to our set
             callset._destinations.add(phone_num)
             callset._entries.append(entry)
-            # callset._dup_dest[phone_num] = 1
 
-            # update the subset tags and compile proportions
-            # TODO: use the "collections" module here!?!?
-            val = entry[callset._subset_field_index]
-            if val not in callset._subset_tags.keys():
-                callset._subset_tags[val] = 1
-            # count up the number of entries with this tag
-            elif val in callset._subset_tags.keys():
-                callset._subset_tags[val] += 1
+        # update the subset tags and compile proportions
+        # TODO: use the "collections" module here!?!?
+        val = entry[callset._subset_field_index]
+        if val not in callset._subset_tags.keys():
+            callset._subset_tags[val] = 1
+        # count up the number of entries with this tag
+        elif val in callset._subset_tags.keys():
+            callset._subset_tags[val] += 1
 
     # create a printer function for this set
     callset.print_table = printer(obj=callset)
@@ -348,20 +365,6 @@ def ring_in_precon(audiofile):
 # #######################
 # this WAS the nla.py stuff #
 # #######################
-
-# TODO:
-# DONE - implement stats computation -> should make this the 'summary' property
-# - create a path index to quickly parse once nla front end has converted a package
-# - implement signalling log parser -> check travis' code
-# DONE - implement wav file plotter
-# - check for ipython and boot if available, else print stats and gen packages?
-# - ask user if they would like to verify path index?
-# - front end script to parse xmls and just spit out the disposition values (load into db?) if there is no csv to reference
-# - func which takes in a text file listing cids -> creates a subset (determine csv vs. .txt in nla part?
-
-# Ideas
-# done - create a seperate class CallLogs package
-# - os.walk instead of 'find' utility
 
 import sys, os, getopt, subprocess
 import xml.etree.ElementTree as ET
@@ -494,13 +497,13 @@ class LogPackage(object):
     the call recording data has been converted to linear format.
 
     A LogSet instance contains the following reference information:
-    - file paths to log files which are copied to a new directory which of 'prepped' audio files in lpcm format
+    - file paths to log files which are copied to a new directory of 'prepped' audio files in lpcm format
     - information parsed from the cdr/.xml
     - counters of indexing errors between the cpa-stats.csv summary and the actual log files provided'''
 
     def __init__(self, csv_file, logs_dir):
 
-        print("creating new logs package in memory...")
+        print("creating new log package in memory...")
         # self._id = callset_id
         self.fields         = {}
         self._field_mask    = []
@@ -510,6 +513,7 @@ class LogPackage(object):
         self.call_logs      = {}
         self.entries        = []
         self.failed_entries = []
+        self.destinations   = set()
 
         # compile data
         self.load_logs(csv_file, logs_dir)
@@ -529,7 +533,7 @@ class LogPackage(object):
         if os.path.isfile(index_file):
             print("\ndetected log index file : '", index_file, "'")
 
-            # a hack for now until I get time to pick a format for the index xml file
+            # a hack for now until I get time to pick a format for the xml index file
             with open(index_file) as f:
                 if f.read() == '':
                     print(index_file, "contains nothing...so let's not generate new packages")
@@ -585,7 +589,6 @@ class LogPackage(object):
                     # make a field mask for displaying a selection of fields
                     self.mask_indices = [self.cid_index, self.result_index, self.detail_result_index]
 
-                    # create a list of indices
                     self.width = len(self.fields)
 
                 # compile a list of csv/call entries
@@ -597,10 +600,20 @@ class LogPackage(object):
                     log_list = scan_logs(cid, logs_dir)
                     log_list = [path.abspath(l) for l in log_list]
 
+                    num = entry[self.phone_index]
+                    # if we've already seen this phone number then skip the entry
+                    if num in self.destinations:
+                        # self._dup_dest += 1
+                        print("WARNING : duplicate destination", num,"found for cid :", cid,"skipping...")
+                        continue
+                    else:
+                        # add destination phone number to our set
+                        self.destinations.add(num)
+
                     if len(log_list) == 0:
                         print("WARNING : no log files found for cid :", cid)
                         self.cid_unfound[cid] = 1
-                        next
+                        continue
 
                     else:
                         # copy to the stats analyser package dir
@@ -631,13 +644,12 @@ class LogPackage(object):
             sys.exit(1)
 
 class CallLogs(object):
+    '''data element which holds call-log paths and useful log metadata (eg. from XML)'''
     def __init__(self, cid, logs_list):
-        self.cid = cid
+        self.cid  = cid
         self.logs = []
-        self.xml = None
-
-        # list of wavs
-        wavs = []
+        self.xml  = None
+        wavs      = []
 
         for path in logs_list:
             # assign properties by extension (note the 'byte' format)
