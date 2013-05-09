@@ -555,7 +555,7 @@ class LogPackage(object):
 
             # create a log index file
             print("creating a log index file...")
-            with open(index_file, 'a') as xml:
+            with open(log_index_f_name, 'a') as xml:
                 xml.write("")
 
             print("scanning for log files ...")
@@ -579,6 +579,7 @@ class LogPackage(object):
                     self.title        = next(csv_reader)    # first line should be the title
                     self.fields       = next(csv_reader)   # second line should be the field names
                     self.field_widths = [0 for i in self.fields]
+                    self.width        = len(self.fields)
 
                     # gather user friendly fields (i.e. fields worth reading on the CLI)
                     self.cid_index           = self.fields.index(cid_f)
@@ -589,7 +590,6 @@ class LogPackage(object):
                     # make a field mask for displaying a selection of fields
                     self.mask_indices = [self.cid_index, self.result_index, self.detail_result_index]
 
-                    self.width = len(self.fields)
 
                 # compile a list of csv/call entries
                 print("compiling log index...\n")
@@ -626,6 +626,10 @@ class LogPackage(object):
 
                         self.call_logs[cid] = CallLogs(cid, log_list)
 
+                    # TODO:
+                    # write xml index file (in some smart way)
+                    # copy xml-index file to sa_package & tuning_logs_package
+
                     # TODO: use the "collections" module here?!
                     # keep track of max str lengths for each field
                     # (used for pretty printing to the console)
@@ -636,7 +640,11 @@ class LogPackage(object):
                     # if all else is good add the entry to our db
                     self.entries.append(entry)
 
-            print("->",str(sum(self.cid_unfound.values())), "cids which did not have logs in the provided package\n")
+            # FIXME: work around for now?
+            shutil.move(log_index_f_name, tuning_dir)
+
+            print("->",str(sum(self.cid_unfound.values())), "cids"
+                  "which did not have logs in the provided package\n")
 
         except csv.Error as err:
             print('file %s, line %d: %s' % (csv_buffer, self._reader.line_num, err))
