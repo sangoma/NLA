@@ -357,8 +357,9 @@ def write_package(callset):
     return None
 
 # routines to be implemented
-def parse_log_file(logpaths_obj):
+def parse_sig_log(log_file):
     return None
+
 def ring_in_precon(audiofile):
     return None
 
@@ -477,14 +478,16 @@ def add_to_dir_package(log_list, dest_dir, output_format='same', remove_str=None
 
     wavname = os.path.basename(wavs[0])
 
+    # nsa HACK: remove unwanted str part from file name
     if remove_str is not None:
-        # remove str part from file name
         wavname.replace(remove_str, "")
 
     wav_path = '/'.join([dest_dir, wavname])
     new_paths.append(wav_path)
 
-    # call sox to do the conversion TODO: check sox exists at the front end?
+    # FIXME: factor out the sox call to a separate routine!
+    # TODO: check sox exists at the front end?
+    # call sox to do the conversion
     if output_format == 'linear':
         format_spec = ["-b", "16", "-e", "signed"]
 
@@ -590,25 +593,24 @@ class LogPackage(object):
                     # make a field mask for displaying a selection of fields
                     self.mask_indices = [self.cid_index, self.result_index, self.detail_result_index]
 
-
                 # compile a list of csv/call entries
                 print("compiling log index...\n")
                 for entry in csv_reader:
 
-                    # search for log files in the file system using call-id field
+                    # get the relevant fields
                     cid = entry[self.cid_index]
-                    log_list = scan_logs(cid, logs_dir)
-                    log_list = [path.abspath(l) for l in log_list]
-
                     num = entry[self.phone_index]
+
                     # if we've already seen this phone number then skip the entry
                     if num in self.destinations:
                         # self._dup_dest += 1
                         print("WARNING : duplicate destination", num,"found for cid :", cid,"skipping...")
                         continue
+
                     else:
-                        # add destination phone number to our set
-                        self.destinations.add(num)
+                        # search for log files in the file system using call-id field
+                        log_list = scan_logs(cid, logs_dir)
+                        log_list = [path.abspath(l) for l in log_list]
 
                     if len(log_list) == 0:
                         print("WARNING : no log files found for cid :", cid)
@@ -616,6 +618,11 @@ class LogPackage(object):
                         continue
 
                     else:
+                        # add destination phone number to our set
+                        # (i.e. there WERE logs AND the number DID NOT
+                        # correspond to a call which already had logs)
+                        self.destinations.add(num)
+
                         # copy to the stats analyser package dir
                         if gen_sa == True:
                             add_to_dir_package(log_list, stats_anal_package, remove_str=troublesome_suffix)
@@ -660,16 +667,19 @@ class CallLogs(object):
         wavs      = []
 
         for path in logs_list:
-            # assign properties by extension (note the 'byte' format)
-            filename, extension = os.path.splitext(path)
-            if extension == ".log":
-                self.logs.append(path)
+            if path is not None:
+                # assign properties by extension (note the 'byte' format)
+                filename, extension = os.path.splitext(path)
+                if extension == ".log":
+                    self.logs.append(path)
 
-            elif extension == ".xml":
-                self.xml = path
+                elif extension == ".xml":
+                    self.xml = path
 
-            elif extension == '.wav':
-                wavs.append(path)
+                elif extension == '.wav':
+                    wavs.append(path)
+            else:
+                print("WARNING : path provided to CallLogs object was ",path)
 
         if len(wavs) == 0:
             print("WARNING : no wave files found for cid '", self.cid, "'")
