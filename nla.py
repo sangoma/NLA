@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # a tool for analyzing NCA logs - NCA Log Analyzer
-# this is the front end script which should be run on a cpa-stats package
+# front end script which should be run on a cpa-stats package
 
 import sys, getopt
 from imp import reload
@@ -20,11 +20,11 @@ This tool will generate the following packages in new directories when provided 
 
 Notes:
   This tool relies heavily on ipython in combination with the 'callset' module
-  (which was scratched together by Tyler Goodlet mostly in his free time while learning python)
   for practical use to efficiently analyze a log set.
   If you don't have ipython installed then get it installed!
+  The tool was scratched together by Tyler Goodlet mostly in his free time while learning python3.
 
-Usage: ./nla.py <cpa-stats.csv> <logs directory>\n''')
+Usage: nla.py <cpa-stats.csv> <logs directory>\n''')
 
 # def main(argv):
 # main(sys.argv)
@@ -52,7 +52,7 @@ for opt in optlist:
         continue
 
 if len(args) < 2:
-    print("Error: not enough arguments!\n")
+    print("E: not enough arguments!\n")
     sys.exit(usage())
 
 elif len(args) > 2:

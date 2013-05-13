@@ -396,10 +396,10 @@ def verbose_make_dir(d):
     if not os.path.exists(d):
         print("-> creating package dir: " + d)
         os.makedirs(d)
-        return True
+        return os.path.abspath(d)
     else:
         print("WARNING : ", d, " already exists...overwriting\n")
-        return False
+        return None
 
 def scan_logs(re_literal, search_dir, method='find'):
     if method == 'find':
@@ -482,7 +482,7 @@ def add_to_dir_package(log_list, dest_dir, output_format='same', remove_str=None
     if remove_str is not None:
         wavname.replace(remove_str, "")
 
-    wav_path = '/'.join([dest_dir, wavname])
+    wav_path = os.path.join(dest_dir, wavname)
     new_paths.append(wav_path)
 
     # FIXME: factor out the sox call to a separate routine!
@@ -554,14 +554,14 @@ class LogPackage(object):
 
             # create package dirs
             verbose_make_dir(stats_anal_package)
-            verbose_make_dir(tuning_dir)
+            tuning_dir = verbose_make_dir(tuning_dir)
 
+            index_file = os.path.join(tuning_dir, log_index_f_name)
             # create a log index file
             print("creating a log index file...")
-            with open(log_index_f_name, 'a') as xml:
+            with open(index_file, 'a') as xml:
                 xml.write("")
 
-            print("scanning for log files ...")
                   # "would you like to re-scan for log files on the system? [Y/n]")
             # answer = raw_input()
             # if answer == 'Y' or answer == '\n':
@@ -570,6 +570,7 @@ class LogPackage(object):
                 # print("exiting...")
                 # sys.exit(0)
         try:
+            print("starting scan for log files ...")
             # load csv file and populate useful properties
             print("opening csv file : '", csv_file, "'")
             with open(csv_file) as csv_buffer:
@@ -647,10 +648,10 @@ class LogPackage(object):
                     # if all else is good add the entry to our db
                     self.entries.append(entry)
 
-            # FIXME: work around for now?
-            shutil.move(log_index_f_name, tuning_dir)
+            # # FIXME: work around for now?
+            # shutil.move(log_index_f_name, tuning_dir)
 
-            print("->",str(sum(self.cid_unfound.values())), "cids"
+            print("->",str(sum(self.cid_unfound.values())), "cids "
                   "which did not have logs in the provided package\n")
 
         except csv.Error as err:
