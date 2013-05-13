@@ -396,10 +396,10 @@ def verbose_make_dir(d):
     if not os.path.exists(d):
         print("-> creating package dir: " + d)
         os.makedirs(d)
-        return os.path.abspath(d)
     else:
         print("WARNING : ", d, " already exists...overwriting\n")
-        return None
+
+    return os.path.abspath(d)
 
 def scan_logs(re_literal, search_dir, method='find'):
     if method == 'find':
@@ -554,9 +554,9 @@ class LogPackage(object):
 
             # create package dirs
             verbose_make_dir(stats_anal_package)
-            tuning_dir = verbose_make_dir(tuning_dir)
+            abs_t_dir = verbose_make_dir(tuning_dir)
 
-            index_file = os.path.join(tuning_dir, log_index_f_name)
+            index_file = os.path.join(abs_t_dir, log_index_f_name)
             # create a log index file
             print("creating a log index file...")
             with open(index_file, 'a') as xml:
@@ -630,7 +630,7 @@ class LogPackage(object):
 
                         # copy to the tuning package dir
                         if gen_lin == True:
-                            log_list = add_to_dir_package(log_list, tuning_dir, output_format='linear')
+                            log_list = add_to_dir_package(log_list, abs_t_dir, output_format='linear')
 
                         self.call_logs[cid] = CallLogs(cid, log_list)
 
