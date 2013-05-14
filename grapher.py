@@ -282,5 +282,8 @@ def test():
     # wp.plot(0)
     return wp
 
+def lazy_test():
+    pass
+
 if __name__ == '__main__':
     wp = test()

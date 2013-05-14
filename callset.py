@@ -371,7 +371,7 @@ import sys, os, getopt, subprocess
 import xml.etree.ElementTree as ET
 import csv
 import shutil
-import os.path as path
+import glob
 
 # important field strings
 cid_f          = 'Netborder Call-id'
@@ -389,7 +389,6 @@ tuning_dir         = "./tuning_logs_package"
 # if this file exists the audio data has already been prepped
 # this index allows for fast file path loading without having to re-scan for files
 log_index_f_name = "log-index.xml"
-
 
 # create a dir if it doesn't already exist
 def verbose_make_dir(d):
@@ -415,10 +414,30 @@ def scan_logs(re_literal, search_dir, method='find'):
             print("scanning logs failed with output: " + e.output)
 
     elif method == 'walk':
-        #TODO: os.walk method
         print("this should normally do an os.walk")
     else:
         print("no other logs scanning method currentlyl exists...sorry")
+        #TODO: os.walk method
+
+def build_log_db(search_dir, method='find'):
+    '''recurses subdirs and build a db of logs by cid'''
+    cid_db   = {}
+
+    for path, dirname, filenames in os.walk(search_dir):
+        for f in filenames:
+            fpath = os.path.join(path,f)
+            if f is not None:
+                segments = f.split(sep='.')
+                cid = segments[0]
+
+                if cid in cid_db:
+                    cid_db[cid].append(fpath)
+                else:
+                    cid_db[cid] = [fpath]
+            else:
+                print("WARNING : file was ",path)
+        # # files = glob.glob(path + "/*" + suffix))
+    return cid_db
 
 def write_log_index_f_name(cid, logs_list):
     # TODO: write a log-index xml file into the lin_log_set dir for
@@ -571,6 +590,8 @@ class LogPackage(object):
                 # sys.exit(0)
         try:
             print("starting scan for log files ...")
+            log_dict = build_log_db(logs_dir)
+
             # load csv file and populate useful properties
             print("opening csv file : '", csv_file, "'")
             with open(csv_file) as csv_buffer:
@@ -608,17 +629,20 @@ class LogPackage(object):
                         print("WARNING : duplicate destination", num,"found for cid :", cid,"skipping...")
                         continue
 
-                    else:
-                        # search for log files in the file system using call-id field
-                        log_list = scan_logs(cid, logs_dir)
-                        log_list = [path.abspath(l) for l in log_list]
-
-                    if len(log_list) == 0:
+                    # search for log files in the file system using call-id field
+                    # log_list = scan_logs(cid, logs_dir)
+                    if cid not in log_dict:
                         print("WARNING : no log files found for cid :", cid)
                         self.cid_unfound[cid] = 1
                         continue
 
+                    # if len(log_list) == 0:
                     else:
+                        log_list = log_dict[cid]
+                        log_list = [os.path.abspath(l) for l in log_list]
+                        # print(log_list)
+                        # sys.exit()
+
                         # add destination phone number to our set
                         # (i.e. there WERE logs AND the number DID NOT
                         # correspond to a call which already had logs)
@@ -673,6 +697,9 @@ class CallLogs(object):
                 filename, extension = os.path.splitext(path)
                 if extension == ".log":
                     self.logs.append(path)
+                # if "analyzer-engine" in filename:
+                #     ae_logs.append(f)
+                # else:
 
                 elif extension == ".xml":
                     self.xml = path
@@ -695,3 +722,6 @@ class CallLogs(object):
             self.wav = wavs[0]
 
         xml_log_update(self)
+
+if __name__ == '__main__':
+    pass
