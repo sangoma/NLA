@@ -176,27 +176,23 @@ class CallSet(object):
         '''plot range of calls from start to stop'''
         self.plot(range(start, stop + 1))
 
-    def plot(self, *indices):
+    def plot(self, *args):
 
-        # if one tuple element
-        if len(indices) == 1:
-            # if we get a sequence then unpack it from the tuple
-            if type(indices[0]) == int:
-                indices = list(indices)
+        indices = []
+        for i in args:
+            if type(i) == int:
+                indices.append(i)
             else:
-                indices = [i for i in indices[0]]
-        else:
-            indices = [i for i in indices]
-            indices.sort()
+                indices.extend([e for e in i])
+        indices.sort()
 
         cls = {}
-
         for index, entry in zip(indices, self.select(indices)):
             cid = entry[self._cid_index]
             # TODO: make sure that wavs is only a single file?
             cl = self._logs_pack.call_logs[cid]
             if cl.wav == None:
-                print("WARNING : no wave files were found for index", index,",cid ",cid)
+                print("WARNING : no wave files were found for index",index,"- cid",cid)
             else:
                 cls[index] = cl
                 print(cl.cid, 'has index', index)
@@ -413,7 +409,6 @@ def verbose_make_dir(d):
         os.makedirs(d)
     else:
         print("WARNING : ", d, " already exists...overwriting\n")
-
     return os.path.abspath(d)
 
 def scan_logs(re_literal, search_dir, method='find'):
@@ -435,7 +430,7 @@ def scan_logs(re_literal, search_dir, method='find'):
         print("no other logs scanning method currentlyl exists...sorry")
         #TODO: os.walk method
 
-def build_log_db(search_dir, method='find'):
+def build_log_db(search_dir, name_sep='.', token_index=0):
     '''recurses subdirs and build a db of logs by cid'''
     cid_db   = {}
 
@@ -443,8 +438,8 @@ def build_log_db(search_dir, method='find'):
         for f in filenames:
             fpath = os.path.join(path,f)
             if f is not None:
-                segments = f.split(sep='.')
-                cid = segments[0]
+                segments = f.split(sep=name_sep)
+                cid = segments[token_index]
 
                 if cid in cid_db:
                     cid_db[cid].append(fpath)
