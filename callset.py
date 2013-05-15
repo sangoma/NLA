@@ -204,8 +204,13 @@ class CallSet(object):
                 # label y
                 ax.set_ylabel(str(cs_index)+ ":" + str(self.entry(cs_index)[self._result_index]))
 
-                # mark the connect time
-                grapher.vline(ax, cl.audio_connect_time, label='200 OK')
+                # mark the connect time if valid
+                connect_time = cl.audio_connect_time
+                if max(ax.get_xlim()) > connect_time:
+                    grapher.vline(ax, connect_time, label='200 OK')
+                else:
+                    print("Warning:",cl.cid,"connect time is too large to plot with value '", connect_time,"'")
+
                 # parse .log files for prob computations
 
             # pretty it up
