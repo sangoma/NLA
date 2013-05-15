@@ -2,8 +2,8 @@
 # plot and annotate lpcm wave files easily
 
 # TODO;
-# - consider moving sox coversion to be in this module so we can open arbitrarly formatted audio files into numpy arrays
-# - animate audio file playback using matplotlib and sound4python
+# - consider moving sox coversion to be in this module so we can open
+# arbitrarly formatted audio files into numpy arrays
 
 from imp import reload
 import numpy as np
@@ -149,6 +149,7 @@ class SigPack(object):
         else:
             h = self.h
         try:
+            #pass
             self.mng.resize(self.w, h)
         except:
             raise "unable to resize windows!?"
@@ -272,8 +273,8 @@ def scr_dim():
     # figure.get_dpi()
     dn = path.dirname(path.realpath(__file__))
     bres = subprocess.check_output([dn + "/screen_size.sh"])
-    dims = bres.decode().strip('\n').split(sep='x')  # left associative
-    return tuple([i for i in map(int, dims)])
+    dims = bres.decode().strip('\n').split('x')  # left associative
+    return tuple([int(i.strip()) for i in dims if i != ''])
 
 def test():
     # example how to use the lazy plotter
