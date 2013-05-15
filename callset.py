@@ -4,15 +4,14 @@
 # MASTER TODO:
 # DONE - use the ipython %edit to open log files directly by callset indices
 # DONE - implement stats computation -> should make this the 'summary' property
-# - create a path index to quickly parse once nla front end has converted a package
+# AVOIDED - create a path index to quickly parse once nla front end has converted a package
 # - implement signalling log parser -> check travis' code
 # DONE - implement wav file plotter
 # DONE - check for ipython and boot if available, else print stats and gen packages?
-# - ask user if they would like to verify path index?
 # - front end script to parse xmls and just spit out the disposition values (load into db?) if there is no csv to reference
-# - func which takes in a text file listing cids -> creates a subset (determine csv vs. .txt in nla part?
+# - func which takes in a text file listing cids -> creates a subset (determine csv vs. .txt in nla part)
 # DONE - create a seperate class CallLogs package
-# - os.walk instead of 'find' utility
+# DONE - os.walk instead of 'find' utility
 
 import itertools
 import grapher
@@ -173,27 +172,43 @@ class CallSet(object):
 
         return None
 
+    def range_plot(self, start, stop):
+        '''plot range of calls from start to stop'''
+        self.plot(range(start, stop + 1))
+
     def plot(self, *indices):
 
-        sip_log_list = []
-        cls          = {}
-        indices      = list(indices)
-        indices.sort()
+        # if one tuple element
+        if len(indices) == 1:
+            # if we get a sequence then unpack it from the tuple
+            if type(indices[0]) == int:
+                indices = list(indices)
+            else:
+                indices = [i for i in indices[0]]
+        else:
+            indices = [i for i in indices]
+            indices.sort()
 
-        # TODO: allow for plotting 'ranges' of calls (i.e. 1 to 4 in steps of 1...etc)
+        cls = {}
+
         for index, entry in zip(indices, self.select(indices)):
             cid = entry[self._cid_index]
             # TODO: make sure that wavs is only a single file?
             cl = self._logs_pack.call_logs[cid]
             if cl.wav == None:
-                print("WARNING : no wave files were found for cid",cid)
+                print("WARNING : no wave files were found for index", index,",cid ",cid)
             else:
                 cls[index] = cl
                 print(cl.cid, 'has index', index)
 
         if cls:
-            for ax, cs_index, cl in zip(self.grapher.itr_plot([cl.wav for cl in cls.values()]), cls.keys(), cls.values()):
-                ax.set_ylabel(str(self._id + " - " + str(cs_index)))
+            wavs = [cl.wav for cl in cls.values()]
+            for ax, cs_index, cl in zip(self.grapher.itr_plot(wavs), cls.keys(), cls.values()):
+
+                # label y
+                ax.set_ylabel(str(cs_index)+ ":" + str(self.entry(cs_index)[self._result_index]))
+
+                # mark the connect time
                 grapher.vline(ax, cl.audio_connect_time, label='200 OK')
                 # parse .log files for prob computations
 
@@ -259,6 +274,7 @@ def add_package_to_callset(callset, logs_package):
         # copy useful indices
         callset._cid_index    = logs_package.cid_index
         callset._phone_index  = logs_package.phone_index
+        callset._result_index = logs_package.result_index
 
         # make a field mask
         callset._mask_indices = logs_package.mask_indices

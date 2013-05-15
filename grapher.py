@@ -2,8 +2,8 @@
 # plot and annotate lpcm wave files easily
 
 # TODO;
-# - consider moving sox coversion to be in this module so we can open
-# arbitrarly formatted audio files into numpy arrays
+# - consider moving sox coversion to be in this module so we can open arbitrarly formatted audio files into numpy arrays
+# - animate audio file playback using matplotlib and sound4python
 
 from imp import reload
 import numpy as np
