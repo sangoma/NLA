@@ -400,8 +400,8 @@ det_nca_result = 'Detailed Cpd Result'
 troublesome_suffix = '.analyzer-engine.0.0'
 
 # 'prepared' log package names
-stats_anal_package = "./sa_package"
-tuning_dir         = "./tuning_logs_package"
+stats_anal_package = "sa_package"
+tuning_dir         = "tuning_logs_package"
 
 # if this file exists the audio data has already been prepped
 # this index allows for fast file path loading without having to re-scan for files
@@ -567,35 +567,45 @@ class LogPackage(object):
         gen_lin = gen_sa = True
 
         # check if log directory contains a log-index.xml file
-        index_file = os.path.join(logs_dir, log_index_f_name)
-        if os.path.isfile(index_file):
-            print("\ndetected log index file : '", index_file, "'")
+        # index_file = os.path.join(logs_dir, log_index_f_name)
+        # if os.path.isfile(index_file):
+            # print("\ndetected log index file : '", index_file, "'")
+
+        # if the logs directory name contains string tuning_logs_package"
+        # then assume the contents have already been processed for use
+        # Note: this is the ONLY stipulation
+        if tuning_dir in logs_dir:
+            print("\nINFO : package dir '",logs_dir,"' contains string '",tuning_dir,"'"
+                  "\ntreating the package as if its data has been pre-processed...\n")
+            gen_lin = False
+            gen_sa = False
 
             # a hack for now until I get time to pick a format for the xml index file
-            with open(index_file) as f:
-                if f.read() == '':
-                    print(index_file, "contains nothing...so let's not generate new packages")
-                    gen_lin = False
-                    gen_sa = False
+            # with open(index_file) as f:
+            #     if f.read() == '':
+            #         print(index_file, "contains nothing...so let's not generate new packages")
+                    # gen_lin = False
+                    # gen_sa = False
 
             # TODO: parse some kind of xml db file
-            print("THIS IS CURRENTLY NOT IMPLEMENTED: should parse xml file here and populate an instance that way!\n")
+            # print("THIS IS CURRENTLY NOT IMPLEMENTED: should parse xml file here and populate an instance that way!\n")
             # for list in xmlelement: (here xmelement is implemented by a generator)
             #     blah = CallLogs(list)
-            pass
+            # pass
 
         else:
+            # print("no '", log_index_f_name, "' found!\n")
             print("no '", log_index_f_name, "' found!\n")
 
             # create package dirs
             verbose_make_dir(stats_anal_package)
             abs_t_dir = verbose_make_dir(tuning_dir)
 
-            index_file = os.path.join(abs_t_dir, log_index_f_name)
+            # index_file = os.path.join(abs_t_dir, log_index_f_name)
             # create a log index file
-            print("creating a log index file...")
-            with open(index_file, 'a') as xml:
-                xml.write("")
+            # print("creating a log index file...")
+            # with open(index_file, 'a') as xml:
+            #     xml.write("")
 
                   # "would you like to re-scan for log files on the system? [Y/n]")
             # answer = raw_input()
