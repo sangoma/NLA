@@ -566,11 +566,6 @@ class LogPackage(object):
         # which packages to create? (default=both)
         gen_lin = gen_sa = True
 
-        # check if log directory contains a log-index.xml file
-        # index_file = os.path.join(logs_dir, log_index_f_name)
-        # if os.path.isfile(index_file):
-            # print("\ndetected log index file : '", index_file, "'")
-
         # if the logs directory name contains string tuning_logs_package"
         # then assume the contents have already been processed for use
         # Note: this is the ONLY stipulation
@@ -580,19 +575,6 @@ class LogPackage(object):
             gen_lin = False
             gen_sa = False
 
-            # a hack for now until I get time to pick a format for the xml index file
-            # with open(index_file) as f:
-            #     if f.read() == '':
-            #         print(index_file, "contains nothing...so let's not generate new packages")
-                    # gen_lin = False
-                    # gen_sa = False
-
-            # TODO: parse some kind of xml db file
-            # print("THIS IS CURRENTLY NOT IMPLEMENTED: should parse xml file here and populate an instance that way!\n")
-            # for list in xmlelement: (here xmelement is implemented by a generator)
-            #     blah = CallLogs(list)
-            # pass
-
         else:
             # print("no '", log_index_f_name, "' found!\n")
             print("no '", log_index_f_name, "' found!\n")
@@ -601,19 +583,6 @@ class LogPackage(object):
             verbose_make_dir(stats_anal_package)
             abs_t_dir = verbose_make_dir(tuning_dir)
 
-            # index_file = os.path.join(abs_t_dir, log_index_f_name)
-            # create a log index file
-            # print("creating a log index file...")
-            # with open(index_file, 'a') as xml:
-            #     xml.write("")
-
-                  # "would you like to re-scan for log files on the system? [Y/n]")
-            # answer = raw_input()
-            # if answer == 'Y' or answer == '\n':
-                # pass
-            # else:
-                # print("exiting...")
-                # sys.exit(0)
         try:
             print("starting scan for log files ...")
             log_dict = build_log_db(logs_dir)
@@ -666,8 +635,6 @@ class LogPackage(object):
                     else:
                         log_list = log_dict[cid]
                         log_list = [os.path.abspath(l) for l in log_list]
-                        # print(log_list)
-                        # sys.exit()
 
                         # add destination phone number to our set
                         # (i.e. there WERE logs AND the number DID NOT
@@ -684,10 +651,6 @@ class LogPackage(object):
 
                         self.call_logs[cid] = CallLogs(cid, log_list)
 
-                    # TODO:
-                    # write xml index file (in some smart way)
-                    # copy xml-index file to sa_package & tuning_logs_package
-
                     # TODO: use the "collections" module here?!
                     # keep track of max str lengths for each field
                     # (used for pretty printing to the console)
@@ -697,9 +660,6 @@ class LogPackage(object):
 
                     # if all else is good add the entry to our db
                     self.entries.append(entry)
-
-            # # FIXME: work around for now?
-            # shutil.move(log_index_f_name, tuning_dir)
 
             print("->",str(sum(self.cid_unfound.values())), "cids "
                   "which did not have logs in the provided package\n")
