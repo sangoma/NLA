@@ -551,7 +551,7 @@ class LogPackage(object):
 
     def __init__(self, csv_file, logs_dir):
 
-        print("creating new log package in memory...")
+        print("attempting to create new log package in memory...")
         # self._id = callset_id
         self.fields         = {}
         self._field_mask    = []
@@ -581,13 +581,13 @@ class LogPackage(object):
         # Note: this is the ONLY stipulation
         if tuning_dir in logs_dir:
             print("\nINFO : package dir '",logs_dir,"' contains string '",tuning_dir,"'"
-                  "\ntreating the package as if its data has been pre-processed...\n")
+                  "\ntreating the package as if its data has been pre-processed...n")
             gen_lin = False
             gen_sa = False
 
         else:
-            # print("no '", log_index_f_name, "' found!\n")
-            print("no '", log_index_f_name, "' found!\n")
+            print("no file with '", tuning_dir, "' string in name found!")
+            print("processing logs dir '",logs_dir,"' from scratch\n")
 
             # create package dirs
             verbose_make_dir(stats_anal_package)
