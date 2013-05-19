@@ -673,7 +673,6 @@ class CallLogs(object):
     '''data element which holds call-log paths and useful log metadata (eg. from XML)'''
     def __init__(self, cid, logs_list):
         self.cid  = cid
-        self.logs = []
         self.xml  = None
         wavs      = []
 
@@ -682,10 +681,10 @@ class CallLogs(object):
                 # assign properties by extension (note the 'byte' format)
                 filename, extension = os.path.splitext(path)
                 if extension == ".log":
-                    self.logs.append(path)
-                # if "analyzer-engine" in filename:
-                #     ae_logs.append(f)
-                # else:
+                    if "analyzer-engine" in filename:
+                        self.ae_log = path
+                    else:
+                        self.sig_log = path
 
                 elif extension == ".xml":
                     self.xml = path
