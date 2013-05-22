@@ -16,6 +16,8 @@
 
 import itertools
 import grapher
+import mmap
+import re
 
 # higher order, value comparison/filtering functions
 def eq(subscript, value):
@@ -203,6 +205,13 @@ class CallSet(object):
         else:
             print("\nsorry no calls were found in subset '" + self._id + "' for indices:", indices)
             print("-> see cs."+self._id+".show")
+
+    def parse_AM_prob(self, filepath):
+
+        with open(filepath, 'r') as log:
+            data = mmap.mmap(log.fileno(), 0, prot=mmap.PROT_READ)
+            matches = re.findall(b'Result.+?(\d+?.\d+?)s.+?CPA_MACHINE=(\d+?.\d+)', data, flags=re.DOTALL)
+            return matches
 
     def close_figure(self):
         self.grapher.close_all_figs()
