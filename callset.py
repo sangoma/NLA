@@ -16,8 +16,7 @@
 
 import itertools
 import grapher
-import mmap
-import re
+import AEParse
 
 # higher order, value comparison/filtering functions
 def eq(subscript, value):
@@ -198,11 +197,14 @@ class CallSet(object):
                 ax.set_ylabel(str(self._id + " - " + str(cs_index)))
                 grapher.vline(ax, cl.audio_connect_time, label='200 OK')
                 # parse .log files for prob computations
-                probX, probY=zip(*self.parse_AM_prob(cl.ae_log))
+
+                eng_parse = AEParse.AEParse(cl.ae_log)
+
+                probX, probY=zip(*eng_parse.cpa_machine)
                 ax.plot(probX, probY, label='Answering Machine')
-                probX, probY=zip(*self.parse_HU_prob(cl.ae_log))
+                probX, probY=zip(*eng_parse.cpa_human)
                 ax.plot(probX, probY, 'r', label='Human')
-                probX, probY=zip(*self.parse_FX_prob(cl.ae_log))
+                probX, probY=zip(*eng_parse.cpa_fax)
                 ax.plot(probX, probY, 'c', label='Fax')
                 ax.legend(loc=0)
 
@@ -212,27 +214,6 @@ class CallSet(object):
         else:
             print("\nsorry no calls were found in subset '" + self._id + "' for indices:", indices)
             print("-> see cs."+self._id+".show")
-
-    def parse_AM_prob(self, filepath):
-
-        with open(filepath, 'r') as log:
-            data = mmap.mmap(log.fileno(), 0, prot=mmap.PROT_READ)
-            matches = re.findall(b'time.(\d{1,3}.\d{3})s.+?CPA_MACHINE=(0.\d+)', data, flags=re.DOTALL)
-            return matches
-
-    def parse_HU_prob(self, filepath):
-
-        with open(filepath, 'r') as log:
-            data = mmap.mmap(log.fileno(), 0, prot=mmap.PROT_READ)
-            matches = re.findall(b'time.(\d{1,3}.\d{3})s.+?CPA_HUMAN=(0.\d+)', data, flags=re.DOTALL)
-            return matches
-
-    def parse_FX_prob(self, filepath):
-
-        with open(filepath, 'r') as log:
-            data = mmap.mmap(log.fileno(), 0, prot=mmap.PROT_READ)
-            matches = re.findall(b'time.(\d{1,3}.\d{3})s.+?CPA_FAX=(0.\d+)', data, flags=re.DOTALL)
-            return matches
 
     def close_figure(self):
         self.grapher.close_all_figs()
