@@ -21,10 +21,10 @@ class AEParse(object):
         machine = re.compile(b'CPA_MACHINE=(0.\d+)')
         human = re.compile(b'CPA_HUMAN=(0.\d+)')
         fax = re.compile(b'CPA_FAX=(0.\d+)')
-        cpa_busy = re.compile(b'CPA_BUSY=(0.\d+)')
-        cpa_reorder = re.compile(b'CPA_REORDER=(0.\d+)')
-        cpa_sit_permanent  = re.compile(b'CPA_SIT_PERMANENT=(0.\d+)')
-        cpa_sit_temporary = re.compile(b'CPA_SIT_TEMPORARY=(0.\d+)')
+        busy = re.compile(b'CPA_BUSY=(0.\d+)')
+        reorder = re.compile(b'CPA_REORDER=(0.\d+)')
+        sit_permanent  = re.compile(b'CPA_SIT_PERMANENT=(0.\d+)')
+        sit_temporary = re.compile(b'CPA_SIT_TEMPORARY=(0.\d+)')
 
         with open(filepath, 'r') as log:
             data = mmap.mmap(log.fileno(), 0, prot=mmap.PROT_READ)
@@ -35,10 +35,10 @@ class AEParse(object):
                 mach_match = machine.findall(chunk[0])
                 human_match = human.findall(chunk[0])
                 fax_match = fax.findall(chunk[0])
-                busy_match = cpa_busy.findall(chunk[0])
-                reorder_match = cpa_reorder.findall(chunk[0])
-                sit_perm_match = cpa_sit_permanent.findall(chunk[0])
-                sit_temp_match = cpa_sit_temporary.findall(chunk[0])
+                busy_match = busy.findall(chunk[0])
+                reorder_match = reorder.findall(chunk[0])
+                sit_perm_match = sit_permanent.findall(chunk[0])
+                sit_temp_match = sit_temporary.findall(chunk[0])
 
                 if (mach_match):
                     self.cpa_machine.append( (chunk[1], mach_match[0]) )
@@ -48,6 +48,18 @@ class AEParse(object):
 
                 if (fax_match):
                     self.cpa_fax.append( (chunk[1], fax_match[0]) )
+                
+                if (busy_match):
+                    self.cpa_busy.append( (chunk[1], busy_match[0]) )
+
+                if (reorder_match):
+                    self.cpa_reorder.append( (chunk[1], reorder_match[0]) )
+
+                if (sit_perm_match):
+                    self.cpa_sit_permanent( (chunk[1], sit_perm_match[0]) )
+
+                if (sit_temp_match):
+                    self.cpa_sit_temporary.append( (chunk[1], sit_temp_match[0]) )
 
 if __name__ == '__main__':
     unit_test = AEParse('/home/tsemczyszyn/WorkLogs/MagNorth/Sangoma_NCA_logs_16_04/tuning_logs_package/1366099479-28125-1934-5740.analyzer-engine.log')
