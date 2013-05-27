@@ -4,15 +4,14 @@
 # MASTER TODO:
 # DONE - use the ipython %edit to open log files directly by callset indices
 # DONE - implement stats computation -> should make this the 'summary' property
-# - create a path index to quickly parse once nla front end has converted a package
+# AVOIDED - create a path index to quickly parse once nla front end has converted a package
 # - implement signalling log parser -> check travis' code
 # DONE - implement wav file plotter
 # DONE - check for ipython and boot if available, else print stats and gen packages?
-# - ask user if they would like to verify path index?
 # - front end script to parse xmls and just spit out the disposition values (load into db?) if there is no csv to reference
-# - func which takes in a text file listing cids -> creates a subset (determine csv vs. .txt in nla part?
+# - func which takes in a text file listing cids -> creates a subset (determine csv vs. .txt in nla part)
 # DONE - create a seperate class CallLogs package
-# - os.walk instead of 'find' utility
+# DONE - os.walk instead of 'find' utility
 
 import itertools
 import grapher
@@ -174,31 +173,46 @@ class CallSet(object):
 
         return None
 
-    def plot(self, *indices):
+    def range_plot(self, start, stop):
+        '''plot range of calls from start to stop'''
+        self.plot(range(start, stop + 1))
 
-        sip_log_list = []
-        cls          = {}
-        indices      = list(indices)
+    def plot(self, *args):
+
+        indices = []
+        for i in args:
+            if type(i) == int:
+                indices.append(i)
+            else:
+                indices.extend([e for e in i])
         indices.sort()
 
-        # TODO: allow for plotting 'ranges' of calls (i.e. 1 to 4 in steps of 1...etc)
+        cls = {}
         for index, entry in zip(indices, self.select(indices)):
             cid = entry[self._cid_index]
             # TODO: make sure that wavs is only a single file?
             cl = self._logs_pack.call_logs[cid]
             if cl.wav == None:
-                print("WARNING : no wave files were found for cid",cid)
+                print("WARNING : no wave files were found for index",index,"- cid",cid)
             else:
                 cls[index] = cl
                 print(cl.cid, 'has index', index)
 
         if cls:
-            for ax, cs_index, cl in zip(self.grapher.itr_plot([cl.wav for cl in cls.values()]), cls.keys(), cls.values()):
-                ax.set_ylabel(str(self._id + " - " + str(cs_index)))
-                grapher.vline(ax, cl.audio_connect_time, label='200 OK')
-                # parse .log files for prob computations
+            wavs = [cl.wav for cl in cls.values()]
+            for ax, cs_index, cl in zip(self.grapher.itr_plot(wavs), cls.keys(), cls.values()):
 
-                eng_parse = AEParse.AEParse(cl.ae_log)
+                # label y
+                ax.set_ylabel(str(cs_index)+ ":" + str(self.entry(cs_index)[self._result_index]))
+
+                # mark the connect time if valid
+                connect_time = cl.audio_connect_time
+                if max(ax.get_xlim()) > connect_time:
+                    grapher.vline(ax, connect_time, label='200 OK')
+                else:
+                    print("Warning:",cl.cid,"connect time is too large to plot with value '", connect_time,"'")
+                
+                eng_parse=AEParse.AEParse(cl.ae_log)
 
                 probX, probY=zip(*eng_parse.cpa_machine)
                 ax.plot(probX, probY, label='Answering Machine')
@@ -271,6 +285,7 @@ def add_package_to_callset(callset, logs_package):
         # copy useful indices
         callset._cid_index    = logs_package.cid_index
         callset._phone_index  = logs_package.phone_index
+        callset._result_index = logs_package.result_index
 
         # make a field mask
         callset._mask_indices = logs_package.mask_indices
@@ -409,7 +424,6 @@ def verbose_make_dir(d):
         os.makedirs(d)
     else:
         print("WARNING : ", d, " already exists...overwriting\n")
-
     return os.path.abspath(d)
 
 def scan_logs(re_literal, search_dir, method='find'):
@@ -431,7 +445,7 @@ def scan_logs(re_literal, search_dir, method='find'):
         print("no other logs scanning method currentlyl exists...sorry")
         #TODO: os.walk method
 
-def build_log_db(search_dir, method='find'):
+def build_log_db(search_dir, name_sep='.', token_index=0):
     '''recurses subdirs and build a db of logs by cid'''
     cid_db   = {}
 
@@ -439,8 +453,8 @@ def build_log_db(search_dir, method='find'):
         for f in filenames:
             fpath = os.path.join(path,f)
             if f is not None:
-                segments = f.split('.')
-                cid = segments[0]
+                segments = f.split(sep=name_sep)
+                cid = segments[token_index]
 
                 if cid in cid_db:
                     cid_db[cid].append(fpath)
