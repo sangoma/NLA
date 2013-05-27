@@ -453,7 +453,7 @@ def build_log_db(search_dir, name_sep='.', token_index=0):
         for f in filenames:
             fpath = os.path.join(path,f)
             if f is not None:
-                segments = f.split(sep=name_sep)
+                segments = f.split(name_sep)
                 cid = segments[token_index]
 
                 if cid in cid_db:
