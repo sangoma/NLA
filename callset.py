@@ -8,8 +8,10 @@
 # - implement signalling log parser -> check travis' code
 # DONE - implement wav file plotter
 # DONE - check for ipython and boot if available, else print stats and gen packages?
-# - front end script to parse xmls and just spit out the disposition values (load into db?) if there is no csv to reference
+# - front end script to parse xmls and just spit out the disposition values (load into db?) 
+# - if there is no csv to reference then handle the files and use xmls # to index?
 # - func which takes in a text file listing cids -> creates a subset (determine csv vs. .txt in nla part)
+# - play audio files and animate
 # DONE - create a seperate class CallLogs package
 # DONE - os.walk instead of 'find' utility
 
@@ -116,7 +118,9 @@ class CallSet(object):
         self._entries.clear()
         self._destinations.clear()
         add_package_to_callset(self, self._logs_pack)
-        self.grapher.reset_cache()#}}}
+        if self.grapher is not None:
+            self.grapher.free_cache()
+        #}}}
 
     def select(self, index_itr):
         '''takes in an iterable of indices to select entries from the callset and
@@ -150,37 +154,22 @@ class CallSet(object):
         write_package()
 
     # TODO: search for a call based on field, string pair
-    def find(self, pos):
+    def find(self, string):
         pass
 
     def filter(self, field, filter_f, value):
         # subset = factory.subset(self, 
         pass
 
-    def summary(self, field=None):
-        if field == None and type(self) == CallSet:
-            #TODO: keep an internal data element (set?) which holds the subset references?
-            subsets = (ss for ss in vars(self).values() if type(ss) == SubSet)
-            table = [[ss._id, ss.length, '{0:.4f}'.format(float(ss.length/self.length))] for ss in subsets]
-            table.sort(key=lambda lst: lst[1], reverse=True)
-            print_stats_w20(table)
-        else:
-            # TODO: use the "collections" module here!?!?
-            print("summary not yet supported for non-supersets...")
-            pass
-            # do crazy iterable summing stuff...
-
-        return None
-
     def range_plot(self, start, stop):
-        '''plot range of calls from start to stop'''
+        '''plot range of calls from start to stop index'''
         self.plot(range(start, stop + 1))
 
     def plot(self, *args):
 
         indices = []
         for i in args:
-            if type(i) == int:
+            if isinstance(i, int):
                 indices.append(i)
             else:
                 indices.extend([e for e in i])
@@ -189,6 +178,7 @@ class CallSet(object):
         cls = {}
         for index, entry in zip(indices, self.select(indices)):
             cid = entry[self._cid_index]
+
             # TODO: make sure that wavs is only a single file?
             cl = self._logs_pack.call_logs[cid]
             if cl.wav == None:
@@ -207,11 +197,12 @@ class CallSet(object):
                 # mark the connect time if valid
                 connect_time = cl.audio_connect_time
                 if max(ax.get_xlim()) > connect_time:
-                    grapher.vline(ax, connect_time, label='200 OK')
+                    lab = "200 OK - "+ str(round(connect_time, 3))
+                    grapher.vline(ax, connect_time, label=lab)
                 else:
                     print("Warning:",cl.cid,"connect time is too large to plot with value '", connect_time,"'")
 
-                # parse .log files for prob computations
+                # parse .log files for prob computations...
 
             # pretty it up
             self.grapher.prettify()
@@ -220,7 +211,23 @@ class CallSet(object):
             print("-> see cs."+self._id+".show")
 
     def close_figure(self):
-        self.grapher.close_all_figs()
+        self.grapher.close_fig()
+
+    @property
+    def summary(self, field=None):
+        if field == None and isinstance(self, CallSet): #type(self) == CallSet:
+            #TODO: keep an internal data element (set?) which holds the subset references?
+            subsets = (ss for ss in vars(self).values() if isinstance(ss, SubSet)) #if type(ss) == SubSet)
+            table = [[ss._id, ss.length, '{0:.4f}'.format(float(ss.length/self.length))] for ss in subsets]
+            table.sort(key=lambda lst: lst[1], reverse=True)
+            print_stats_w20(table)
+        else:
+            # TODO: use the "collections" module here!?!?
+            print("summary not yet supported for non-supersets...")
+            pass
+            # do crazy iterable summing stuff...
+
+        return None
 
     @property
     def _display_fields(self):
@@ -229,7 +236,6 @@ class CallSet(object):
     @property
     def fields(self):
         return self._fields
-        # print_all([self._fields])
 
     @property
     def column_widths(self):
@@ -246,6 +252,7 @@ class CallSet(object):
         # return sum(itertools.count() for i in self._entries)
 
 # using "containment and delegation"
+# (only inherit to get tab completion in ipython)
 class SubSet(CallSet):
     def __init__(self, name, super_set, filter_func):
         self._id = name # seems like a hack (see CallSet.summary())-> polymorphic approach?
