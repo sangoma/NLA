@@ -1,75 +1,98 @@
 #!/usr/bin/env python3
-#Contains subroutines for parsing and storing probability results from the
-#analyzer engine logs of Netborder Call Analyzer
+# Contains subroutines for parsing and storing probability results from the
+# analyzer engine logs of Netborder Call Analyzer
 
 import re
 import mmap
 
-class AEParse(object):
+# container for a probability time series parsed from an ae log
+class ProbSequence(object):
+    def __init__(self, name, colour):
+        self.name = name
+        self.colour = colour
+        self.time = []
+        self.prob = []
+
+    def get_ts(self):
+        return (self.time, self.prob)
+
+# the parser class
+class AEParser(object):
 
     def __init__(self, filepath):
 
-        self.cpa_machine = []
-        self.cpa_human = []
-        self.cpa_fax = []
-        self.cpa_busy = []
-        self.cpa_reorder = []
-        self.cpa_sit_permanent = []
-        self.cpa_sit_temporary = []
-        
-        audio_time = re.compile(b'(audio.time.is:.(\d{1,3}\.\d{3}).+?CPA.session.time.is)', flags=re.DOTALL)
-        machine = re.compile(b'CPA_MACHINE=(0.\d+)')
-        human = re.compile(b'CPA_HUMAN=(0.\d+)')
-        fax = re.compile(b'CPA_FAX=(0.\d+)')
-        busy = re.compile(b'CPA_BUSY=(0.\d+)')
-        reorder = re.compile(b'CPA_REORDER=(0.\d+)')
-        sit_permanent  = re.compile(b'CPA_SIT_PERMANENT=(0.\d+)')
-        sit_temporary = re.compile(b'CPA_SIT_TEMPORARY=(0.\d+)')
+        # here we define the colours that should be used for plotting.
+        # this way the palette remains consistent.
+        self.p_machine       = ProbSequence('machine', 'r')
+        self.p_human         = ProbSequence('human', 'g')
+        self.p_fax           = ProbSequence('fax', '')
+        self.p_busy          = ProbSequence('busy','')
+        self.p_reorder       = ProbSequence('sit_reorder','')
+        self.p_sit_permanent = ProbSequence('sit_permanent','')
+        self.p_sit_temp      = ProbSequence('sit_temporary','')
+
+        # we should dynamically create ProbSequences a a function of the
+        # found patterns below...?
+        # we'll need a colour look up table then i guess?
+        audio_time    = re.compile(b'(audio.time.is:.(\d{1,3}\.\d{3}).+?CPA.session.time.is)',
+                                   flags = re.DOTALL)
+        machine       = re.compile(b'CPA_MACHINE.?=.?(0.\d+)')
+        human         = re.compile(b'CPA_HUMAN.?=.?(0.\d+)')
+        fax           = re.compile(b'CPA_FAX.?=.?(0.\d+)')
+        busy          = re.compile(b'CPA_BUSY.?=.?(0.\d+)')
+        reorder       = re.compile(b'CPA_REORDER.?=.?(0.\d+)')
+        sit_permanent = re.compile(b'CPA_SIT_PERMANENT.?=.?(0.\d+)')
+        sit_temporary = re.compile(b'CPA_SIT_TEMPORARY.?=.?(0.\d+)')
 
         with open(filepath, 'r') as log:
-            data = mmap.mmap(log.fileno(), 0, prot=mmap.PROT_READ)
+
+            # use mmap module so we can re through an in-memory copy
+            data    = mmap.mmap(log.fileno(), 0, prot = mmap.PROT_READ)
             matches = audio_time.findall(data)
 
             for chunk in matches:
-                
-                mach_match = machine.findall(chunk[0])
-                human_match = human.findall(chunk[0])
-                fax_match = fax.findall(chunk[0])
-                busy_match = busy.findall(chunk[0])
-                reorder_match = reorder.findall(chunk[0])
+                time = float(chunk[1])
+
+            # look for prob 'key=values' in each segment (chunk) between
+            # 'audio time is' samples...
+                am_match       = machine.findall(chunk[0])
+                human_match    = human.findall(chunk[0])
+                fax_match      = fax.findall(chunk[0])
+                busy_match     = busy.findall(chunk[0])
+                reorder_match  = reorder.findall(chunk[0])
                 sit_perm_match = sit_permanent.findall(chunk[0])
                 sit_temp_match = sit_temporary.findall(chunk[0])
 
-                if (mach_match):
-                    self.cpa_machine.append( (chunk[1], mach_match[0]) )
+                # fill the sequences with any samples which are found
+                if (am_match):
+                    # self.cpa_machine.append( (chunk[1], am_match[0]) )
+                    self.p_machine.time.append(time)
+                    self.p_machine.prob.append(float(am_match[0]))
 
                 if (human_match):
-                    self.cpa_human.append( (chunk[1], human_match[0]) )
+                    self.p_human.time.append(time)
+                    self.p_human.prob.append(float(human_match[0]))
 
                 if (fax_match):
-                    self.cpa_fax.append( (chunk[1], fax_match[0]) )
-                
+                    self.p_fax.time.append(time)
+                    self.p_fax.prob.append(float(fax_match[0]))
+
                 if (busy_match):
-                    self.cpa_busy.append( (chunk[1], busy_match[0]) )
+                    self.p_busy.time.append(time)
+                    self.p_busy.prob.append(float(busy_match[0]))
 
                 if (reorder_match):
-                    self.cpa_reorder.append( (chunk[1], reorder_match[0]) )
+                    self.p_reorder.time.append(time)
+                    self.p_reorder.prob.append(float(reorder_match[0]))
 
                 if (sit_perm_match):
-                    self.cpa_sit_permanent( (chunk[1], sit_perm_match[0]) )
+                    self.p_sit_perm.time.append(time)
+                    self.p_sit_perm(float(sit_perm_match[0]))
 
                 if (sit_temp_match):
-                    self.cpa_sit_temporary.append( (chunk[1], sit_temp_match[0]) )
+                    self.p_sit_temp.time.append(time)
+                    self.p_sit_temp.prob.append(float(sit_temp_match[0]))
 
 if __name__ == '__main__':
+    # TODO: set this unit test to use a file local to the repo...
     unit_test = AEParse('/home/tsemczyszyn/WorkLogs/MagNorth/Sangoma_NCA_logs_16_04/tuning_logs_package/1366099479-28125-1934-5740.analyzer-engine.log')
-
-
-
-
-
-
-
-
-
-
