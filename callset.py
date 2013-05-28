@@ -18,6 +18,8 @@
 import itertools
 import grapher
 import AEParse
+import numpy as np
+import matplotlib
 
 # higher order, value comparison/filtering functions
 def eq(subscript, value):
@@ -195,27 +197,49 @@ class CallSet(object):
                 # label y
                 ax.set_ylabel(str(cs_index)+ ":" + str(self.entry(cs_index)[self._result_index]))
 
+                prob_parse = AEParse.AEParser(cl.ae_log)
+                # num_probs = len([i for i in vars(prob_parse).values() if isinstance(i, list)])
+                # colors = iter(matplotlib.cm.rainbow(np.linspace(0, 1, num_probs)))
+                colours = iter(['r', 'g', 'b'])
+                # colors = iter(matplotlib.cm.rainbow(np.arange(0, 10)))
+
+                # should we eventually change AEParse to be a bit more abstract and fancy...?
+                for attr in vars(prob_parse).values():
+                    if isinstance(attr, AEParse.ProbSequence) and len(attr.prob) > 0:
+                        # px, py = zip(*attr)
+                        px ,py = attr.get_ts()
+                        # c = next(colours)
+                        ax.plot(px, py, label=str(attr.name),
+                                drawstyle='default',
+                                linestyle=':',
+                                marker='D',
+                                markersize=3)#,
+                                # linewidth=)
+                        # print(c)
+                        # markerline, stemlines, baseline = ax.stem(px, py,
+                        #                                   linefmt=c+'.',
+                        #                                   markerfmt=c+'+',
+                        #                                   basefmt=c+'.',
+                        #                                   # bottom=0.5,
+                        #                                   label=str(key))
+                        # set the colour using our def
+                        # matplotlib.artist.setp(markerline, color=c)
+
+                # need a smart way to generate ONE legend for all axes
+                # ax.legend(loc=0)
+
                 # mark the connect time if valid
                 connect_time = cl.audio_connect_time
                 if max(ax.get_xlim()) > connect_time:
-                    lab = "200 OK - "+ str(round(connect_time, 3))
+                    lab = "200 OK - "+ str(round(connect_time, 2)) +"s"
                     grapher.vline(ax, connect_time, label=lab)
                 else:
                     print("Warning:",cl.cid,"connect time is too large to plot with value '", connect_time,"'")
 
-                eng_parse=AEParse.AEParse(cl.ae_log)
-
-                probX, probY=zip(*eng_parse.cpa_machine)
-                ax.plot(probX, probY, label='Answering Machine')
-                probX, probY=zip(*eng_parse.cpa_human)
-                ax.plot(probX, probY, 'r', label='Human')
-                probX, probY=zip(*eng_parse.cpa_fax)
-                ax.plot(probX, probY, 'c', label='Fax')
-                ax.legend(loc=0)
-
-            # pretty it up
+            # pretty it up!
             self.grapher.prettify()
             self.grapher.fig.show()
+
         else:
             print("\nsorry no calls were found in subset '" + self._id + "' for indices:", indices)
             print("-> see cs."+self._id+".show")
