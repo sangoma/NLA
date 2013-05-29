@@ -1,11 +1,12 @@
 # call set interface
 # Python3 implementation
 
-# MASTER TODO:
+# Master TODO:
 # DONE - use the ipython %edit to open log files directly by callset indices
 # DONE - implement stats computation -> should make this the 'summary' property
 # AVOIDED - create a path index to quickly parse once nla front end has converted a package
-# - implement signalling log parser -> check travis' code
+# DONE - implement probability log parser -> thanks to Travis and his expertise with re
+# - implement signalling log parser -> what messages are actually useful?
 # DONE - implement wav file plotter
 # DONE - check for ipython and boot if available, else print stats and gen packages?
 # - front end script to parse xmls and just spit out the disposition values (load into db?) 
@@ -18,8 +19,8 @@
 import itertools
 import grapher
 import AEParse
-import numpy as np
-import matplotlib
+# import numpy as np
+# import matplotlib
 
 # higher order, value comparison/filtering functions
 def eq(subscript, value):
@@ -226,6 +227,7 @@ class CallSet(object):
                         # matplotlib.artist.setp(markerline, color=c)
 
                 # need a smart way to generate ONE legend for all axes
+                # only place legend on last axis?
                 # ax.legend(loc=0)
 
                 # mark the connect time if valid
@@ -496,11 +498,6 @@ def build_log_db(search_dir, name_sep='.', token_index=0):
         # # files = glob.glob(path + "/*" + suffix))
     return cid_db
 
-def write_log_index_f_name(cid, logs_list):
-    # TODO: write a log-index xml file into the lin_log_set dir for
-    # quick parsing on reload???
-    pass
-
 def xml_log_update(log_obj):
     if log_obj.xml is None:
         print("WARNING: the log set for '", log_obj.cid, "' does not seem to contain an xml file\n"
@@ -609,7 +606,7 @@ class LogPackage(object):
 
         # if the logs directory name contains string tuning_logs_package"
         # then assume the contents have already been processed for use
-        # Note: this is the ONLY stipulation
+        # (Note: this is the ONLY stipulation)
         if tuning_dir in logs_dir:
             print("\nINFO : package dir '",logs_dir,"' contains string '",tuning_dir,"'"
                   "\ntreating the package as if its data has been pre-processed...n")
