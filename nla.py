@@ -26,6 +26,15 @@ Notes:
 
 Usage: nla.py <cpa-stats.csv> <logs directory>\n''')
 
+# check if ipython running...better way to do this?
+def in_ipython():
+    try:
+        __IPYTHON__
+    except NameError:
+        return False
+    else:
+        return True
+
 # def main(argv):
 # main(sys.argv)
 """main entry point and options parsing"""
@@ -62,7 +71,7 @@ else:
     csv_file = args[0]
     logs_dir = args[1]
 
-# field VALUE used to 'segment' sub-callsets in in the object interface
+# field VALUE used to 'segment' sub-callsets in the object interface
 disjoin_field  = 'NCA Engine Result'
 
 # compile logs package into memory (WARNING this creates new packages with duplicate data)
@@ -77,11 +86,16 @@ def reload_cs(cs=cs):
 
 cs = reload_cs()
 
-print("\nattempting to start ipython shell...\n")
-try: from IPython import embed
-except ImportError as imperr : print(imperr)
-# this call anywhere in your program will start IPython
-embed()
+if in_ipython():
+    print("\nYou Devil! You're already inside the ipython shell!\n"
+          "FYI : It will also open automatically if you just run this script from the shell...")
+    pass
+else:
+    print("\nattempting to start ipython shell...\n")
+    try: from IPython import embed
+    except ImportError as imperr : print(imperr)
+    # this call anywhere in your program will start IPython
+    embed()
 
 # HINT: to create a new subset try something like,
 # subset = cs.factory.new_subset(parent, filter_function)
