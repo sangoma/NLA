@@ -9,7 +9,7 @@
 # - implement signalling log parser -> what messages are actually useful?
 # DONE - implement wav file plotter
 # DONE - check for ipython and boot if available, else print stats and gen packages?
-# - front end script to parse xmls and just spit out the disposition values (load into db?) 
+# - front end script to parse xmls and just spit out the disposition values (load into db?)
 # - if there is no csv to reference then handle the files and use xmls # to index?
 # - func which takes in a text file listing cids -> creates a subset (determine csv vs. .txt in nla part)
 # - play audio files and animate
@@ -33,7 +33,7 @@ def gt(subscript, value):
 # filter a callset._entries by a field entry value (generally uses above functions)
 def filter_by_field(field_index, filter_func, value):
     '''create a filtered iterable of entries by field'''
-    return lambda lst: filter(filter_func(field_index, value), lst)
+    return lambda itr: filter(filter_func(field_index, value), itr)
 
 '''example filters which can be applied to a callset._entries :
     am_f    = filter_by_field(5, eq, "Answering-Machine")
@@ -70,16 +70,20 @@ def new_callset(log_package, disjoin_field):
     return factory.new_super(log_package, disjoin_field)
 
 # use a factory design pattern you fool!
+# FIXME: change this to a factory method??
 class CallSetFactory(object):
     def new_super(self, log_package, subset_field_tag):
         cs = CallSet("superset", subset_field_tag)
-    #TODO: consider attaching the factory to the callset itself?
+
+        # attach the factory to the callset itself
         cs.factory = self
         add_package_to_callset(cs, log_package)
 
         # allocate subsets and attach as attributes of the callset
         for s in cs._subset_tags.keys():
-            subset = self.new_subset(str(s), cs, filter_by_field(cs._subset_field_index, eq, str(s)))
+            subset = self.new_subset(cs,
+                                     filter_by_field(cs._subset_field_index, eq, str(s)),
+                                     name_tag=str(s))
             self.attach_prop(cs, s, subset)
         return cs
 
@@ -90,9 +94,8 @@ class CallSetFactory(object):
         setattr(parent, name, prop)
 
     # gen a new subset to wrap the superset as an attribute
-    def new_subset(self, name_tag, super_set, filter_f):
-            return SubSet(name_tag, super_set, filter_f)
-
+    def new_subset(self, super_set, filter_f, name_tag=None):
+            return SubSet(super_set, filter_f, name_tag)
 
 class CallSet(object):
 
@@ -162,7 +165,7 @@ class CallSet(object):
         pass
 
     def filter(self, field, filter_f, value):
-        # subset = factory.subset(self, 
+        # subset = self.factory.subset(self, 
         pass
 
     def range_plot(self, start, stop):
@@ -191,45 +194,32 @@ class CallSet(object):
                 cls[index] = cl
                 print(cl.cid, 'has index', index)
 
+        lines = {}
         if cls:
             wavs = [cl.wav for cl in cls.values()]
             for ax, cs_index, cl in zip(self.grapher.itr_plot(wavs), cls.keys(), cls.values()):
 
-                # label y
+                # label y and set range
                 ax.set_ylabel(str(cs_index)+ ":" + str(self.entry(cs_index)[self._result_index]))
+                ax.set_ylim(-1,1)
 
-                prob_parse = AEParse.AEParser(cl.ae_log)
-                # num_probs = len([i for i in vars(prob_parse).values() if isinstance(i, list)])
-                # colors = iter(matplotlib.cm.rainbow(np.linspace(0, 1, num_probs)))
-                colours = iter(['r', 'g', 'b'])
-                # colors = iter(matplotlib.cm.rainbow(np.arange(0, 10)))
-
-                # should we eventually change AEParse to be a bit more abstract and fancy...?
-                for attr in vars(prob_parse).values():
+                # parse the prob sequences...
+                # should we eventually change AEParse to be a bit more abstract and fancy?
+                prob_parser = AEParse.AEParser(cl.ae_log)
+                for attr in vars(prob_parser).values():
                     if isinstance(attr, AEParse.ProbSequence) and len(attr.prob) > 0:
-                        # px, py = zip(*attr)
                         px ,py = attr.get_ts()
-                        # c = next(colours)
-                        ax.plot(px, py, label=str(attr.name),
-                                drawstyle='default',
-                                linestyle=':',
-                                marker='D',
-                                markersize=3)#,
-                                # linewidth=)
-                        # print(c)
-                        # markerline, stemlines, baseline = ax.stem(px, py,
-                        #                                   linefmt=c+'.',
-                        #                                   markerfmt=c+'+',
-                        #                                   basefmt=c+'.',
-                        #                                   # bottom=0.5,
-                        #                                   label=str(key))
-                        # set the colour using our def
-                        # matplotlib.artist.setp(markerline, color=c)
+                        print("index = ", cs_index)
+                        print("times = ",px,"\nprobs = ", py)
+                        print("type =", attr.name, " colour =", attr.colour, "\n")
 
-                # need a smart way to generate ONE legend for all axes
-                # only place legend on last axis?
-                # ax.legend(loc=0)
-
+                        # plot them probs and store only unique lines
+                        lines[attr.name], = ax.plot(px, py, label=str(attr.name),
+                                                   drawstyle='default',
+                                                   color=attr.colour,
+                                                   linestyle=':',
+                                                   marker='D',
+                                                   markersize=4)#[0]
                 # mark the connect time if valid
                 connect_time = cl.audio_connect_time
                 if max(ax.get_xlim()) > connect_time:
@@ -238,8 +228,24 @@ class CallSet(object):
                 else:
                     print("Warning:",cl.cid,"connect time is too large to plot with value '", connect_time,"'")
 
+            # ax.legend(loc='lower center',
+            #           bbox_to_anchor=(0.5, 1.05),
+            #           ncol=3, fancybox=True, shadow=True)
+            # ax.legend(loc=0)
+
             # pretty it up!
             self.grapher.prettify()
+
+            # Put a legend below the last axis
+            self.grapher.fig.legend(lines.values(),
+                                    lines.keys(),
+                                    # loc='lower right',
+                                    loc=(0,0),
+                                    # title="Probabilities",
+                                    # fancybox=True,
+                                    # shadow=True,
+                                    ncol=6)
+            # show it!
             self.grapher.fig.show()
 
         else:
@@ -249,7 +255,7 @@ class CallSet(object):
     def close_figure(self):
         self.grapher.close_fig()
 
-    @property
+    # @property
     def summary(self, field=None):
         if field == None and isinstance(self, CallSet): #type(self) == CallSet:
             #TODO: keep an internal data element (set?) which holds the subset references?
@@ -261,9 +267,13 @@ class CallSet(object):
             # TODO: use the "collections" module here!?!?
             print("summary not yet supported for non-supersets...")
             pass
-            # do crazy iterable summing stuff...
-
+            # do crazy iterable summing stuff...?
         return None
+
+    def set_from_id_file(self, file):
+        # inputs : file with a list of cids seperated by newlines
+        # output : callset
+        pass
 
     @property
     def _display_fields(self):
@@ -277,7 +287,10 @@ class CallSet(object):
     def column_widths(self):
         return [i for i in self._field_mask(self._field_widths)]
 
-    @property
+    def show_fields(self):
+        print_all([[field] for field in self.fields])
+
+    # @property
     def show(self):
         self.print_table(map(self._field_mask, self._entries))
 
@@ -287,10 +300,10 @@ class CallSet(object):
         #consider?
         # return sum(itertools.count() for i in self._entries)
 
-# using "containment and delegation"
-# (only inherit to get tab completion in ipython)
+# use "containment and delegation"
+# (inherit only to get tab completion in ipython)
 class SubSet(CallSet):
-    def __init__(self, name, super_set, filter_func):
+    def __init__(self, super_set, filter_func, name=None):
         self._id = name # seems like a hack (see CallSet.summary())-> polymorphic approach?
         self._parent = super_set
         self._filter = filter_func
@@ -364,7 +377,7 @@ def printer(obj=None, fields=[], field_width=20, delim='|'):
     NOTE: should only be passed a callset AFTER the callset set has been populated
     with data (run callset.add_package_to_callset first)'''
 
-    if type(obj) == CallSet:
+    if isinstance(obj, CallSet):
         #TODO: but how will these update dynamically???
         callset = obj
         widths = callset.column_widths
@@ -377,7 +390,7 @@ def printer(obj=None, fields=[], field_width=20, delim='|'):
         # use an infinite width generator
         widths = iter(lambda:field_width, 1)
 
-    # here a table is normally a list of lists or an iterable over one
+    # here a table is normally a list of lists or an iterable over lists
     def printer_function(table):
 
         # mark as from parent scope
@@ -403,7 +416,7 @@ def printer(obj=None, fields=[], field_width=20, delim='|'):
     return printer_function
 
 # default printers which prints all columns
-print_all = printer(field_width=10)
+print_all = printer(field_width=10, delim='')
 print_stats_w20 = printer(field_width=20, fields=['Disposition', 'Sum', 'Proportion'], delim='|')
 
 def write_package(callset):
@@ -418,10 +431,10 @@ def write_package(callset):
 
 # routines to be implemented
 def parse_sig_log(log_file):
-    return None
+    pass
 
 def ring_in_precon(audiofile):
-    return None
+    pass
 
 # #######################
 # this WAS the nla.py stuff #
