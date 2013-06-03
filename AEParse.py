@@ -21,28 +21,38 @@ class AEParser(object):
 
     def __init__(self, filepath):
 
+        # color codes
+        # 'b'         blue
+        # 'g'         green
+        # 'r'         red
+        # 'c'         cyan
+        # 'm'         magenta
+        # 'y'         yellow
+        # 'k'         black
+        # 'w'         white
+
         # here we define the colours that should be used for plotting.
         # this way the palette remains consistent.
         self.p_machine       = ProbSequence('machine', 'r')
         self.p_human         = ProbSequence('human', 'g')
-        self.p_fax           = ProbSequence('fax', '')
-        self.p_busy          = ProbSequence('busy','')
-        self.p_reorder       = ProbSequence('sit_reorder','')
-        self.p_sit_permanent = ProbSequence('sit_permanent','')
-        self.p_sit_temp      = ProbSequence('sit_temporary','')
+        self.p_fax           = ProbSequence('fax', 'm')
+        self.p_busy          = ProbSequence('busy','y')
+        self.p_reorder       = ProbSequence('sit_reorder','c')
+        self.p_sit_permanent = ProbSequence('sit_permanent','k')
+        self.p_sit_temp      = ProbSequence('sit_temporary','w')
 
         # we should dynamically create ProbSequences a a function of the
         # found patterns below...?
         # we'll need a colour look up table then i guess?
         audio_time    = re.compile(b'(audio.time.is:.(\d{1,3}\.\d{3}).+?CPA.session.time.is)',
                                    flags = re.DOTALL)
-        machine       = re.compile(b'CPA_MACHINE.?=.?(0.\d+)')
-        human         = re.compile(b'CPA_HUMAN.?=.?(0.\d+)')
-        fax           = re.compile(b'CPA_FAX.?=.?(0.\d+)')
-        busy          = re.compile(b'CPA_BUSY.?=.?(0.\d+)')
-        reorder       = re.compile(b'CPA_REORDER.?=.?(0.\d+)')
-        sit_permanent = re.compile(b'CPA_SIT_PERMANENT.?=.?(0.\d+)')
-        sit_temporary = re.compile(b'CPA_SIT_TEMPORARY.?=.?(0.\d+)')
+        machine       = re.compile(b'CPA_MACHINE=(0.\d+)')
+        human         = re.compile(b'CPA_HUMAN=(0.\d+)')
+        fax           = re.compile(b'CPA_FAX=(0.\d+)')
+        busy          = re.compile(b'CPA_BUSY=(0.\d+)')
+        reorder       = re.compile(b'CPA_REORDER=(0.\d+)')
+        sit_permanent = re.compile(b'CPA_SIT_PERMANENT=(0.\d+)')
+        sit_temporary = re.compile(b'CPA_SIT_TEMPORARY=(0.\d+)')
 
         with open(filepath, 'r') as log:
 
