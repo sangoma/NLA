@@ -8,26 +8,65 @@
 from imp import reload
 import numpy as np
 import matplotlib.pyplot as plt
-# from  matplotlib import figure
+import matplotlib.animation as animation
 import wave
 #from scipy.io import wavfile
 # from scipy import signal
 # from scipy import fftpack
 import subprocess, os
 import gc
+from collections import OrderedDict
 
-class SigPack(object):
-    def __init__(self, wave_file_list):
+# select values from an itr by index
+def itr_iselect(indices, itr):
+    i_set = set(i for i in indices)
+    return (e for (i, e) in enumerate(itr) if i in i_set)
+
+# like it sounds : an ordered, int subscriptable dict
+class OrderedIndexedDict(OrderedDict):
+    def __getitem__(self, key):
+        # if it's already mapped get the value
+        if key in self:
+            return OrderedDict.__getitem__(self, key)
+        else:
+            if isinstance(key, int):
+                # TODO: faster way to implement this?
+                # what about key = -1 like in lists?  fack!...
+                # slices ....gack!?
+                for i, e in enumerate(self.values()):
+                    if i == key:
+                        return e
+                    else:
+                        continue
+                # if we run out of elements
+                raise IndexError("index out of range")
+
+    def __setitem__(self, key, value):
+        if isinstance(key, int):
+            # don't give me ints bitch...
+            raise KeyError("key can not be of type integer")
+        else:
+            OrderedDict.__setitem__(self, key, value)
+
+# meant to be used interactively as well as programatcially!?
+class SigSet(object):
+    def __init__(self):
         self.flist = []
-        self._vectors = {}
+        self._signals = OrderedIndexedDict() # ahhh yeah the fancy stuff...
+        # self._signals = {}
+        self._lines = []
         self.fig = None
-        self.add(wave_file_list)
+        # self.add(wave_file_list)
 
-        # TODO: make scr_dim impl more pythonic
+        # FIXME: make scr_dim impl more pythonic! like now...
         self.w, self.h = scr_dim()
 
         # get the garbarge truck rolling...
         gc.enable()
+
+    def __contains__(self, key):
+        # check if in our dict keys
+        return key in self._signals
 
     def _load_sig(self, path):
         try:
@@ -39,7 +78,7 @@ class SigPack(object):
 
             amax = 2**(self.bd - 1) - 1
             sig = sig/amax
-            self._vectors[path] = sig
+            self._signals[path] = sig
             print("INFO |->",len(sig),"samples =",len(sig)/self.fs,"seconds @ ",self.fs," Hz")
         except:
             raise Exception("Failed to load wave file!\nEnsure that the wave file exists and is in LPCM format")
@@ -48,8 +87,10 @@ class SigPack(object):
     def show(self):
         '''pretty print the internal path list'''
         #FIXME: throw an error if table is empty
-        if self.flist:
-            print_table(map(os.path.basename, self.flist))
+        # if self.flist:
+        #     print_table(map(os.path.basename, self.flist))
+        if len(self._signals):
+            print_table(map(os.path.basename, self._signals.keys()))
         else:
             print("E: no file list exists yet!?...")
 
@@ -63,7 +104,7 @@ class SigPack(object):
 
     def free_cache(self):
         #TODO: make this actually release memory instead of just being a bitch!
-        self._vectors.clear()
+        self._signals.clear()
         gc.collect()
 
     def fullscreen(self):
@@ -74,50 +115,56 @@ class SigPack(object):
 
     def vector(self, elem):
         # could be an int-index or path
-        if type(elem) == str:
+        if isinstance(elem, str):
             path = elem
-        elif type(elem) == int:
+        elif isinstance(elem, int):
             path = self.flist[elem]
         else:
-            raise IndexError("unsupported vectors index :", elem)
+            raise IndexError("unsupported index :", elem)
 
         # path exists and vector loaded
-        if path in self._vectors.keys() and type(self._vectors[path]) == np.ndarray:
-            # print("the file ", self.flist[index], "is already cached in _vectors dict!")
-            return self._vectors[path]
+        if path in self._signals.keys():
+            # path exists and vector is loaded in mem
+            if isinstance(self._signals[path], np.ndarray):
+                # print("the file ", self.flist[index], "is already cached in _signals dict!")
+                return self._signals[path]
 
-        # path exists but vector not yet loaded
-        elif self._vectors.get(path) == None:
-            self._load_sig(path)
-            return self._vectors[path]
+            # path exists but vector not yet loaded
+            elif self._signals.get(path) == None:
+                self._load_sig(path)
+                return self._signals[path]
 
         # request for an index which doesn't reference a path
-        elif path not in self._vectors.keys():
-            print("Error: you requested an index out of range!")
-            raise IndexError("no file path exists for index : " + str(index) + " see SigPack.show")
+        elif path not in self._signals.keys():
+            # print("E: you requested an index out of range!")
+            raise IndexError("no file path exists for index : " + str(path) + "\n"
+                             "Has it been added to your Signal Pack? -> see SigPack.show")
         else:
-            raise IndexError("weird stuffs happening heres!")
+            raise IndexError("weird stuffs happening heres?!")
 
-    def add(self, paths):
-        '''Add a wave file path to the SigPack.\n
-        Can take a single path or a sequence of paths as input'''
+    def add(self, p):
+        '''Add a wave file path to the SigPack'''
+        # '''Can take a single path or a sequence of paths as input'''
+
         # indices = []
-        paths = iter(paths) # always make paths an iterable
+        # paths = iter(paths) # always make paths an iterable
 
         # a sequence of paths? -> generate look-up indices
-        for p in paths:
-            if os.path.exists(p):
-                # filename, extension = os.path.splitext(p)
-                if p not in self._vectors.keys():
-                    self.flist.append(p)
-                    # self._vectors[self.flist.index(p)] = None
-                    self._vectors[p] = None
-                else:
-                    print(os.path.basename(p), "is already in our path db -> see grapher.SigPack.show")
+        # for p in paths:
+        #     print("path = ", p)
+        if os.path.exists(p):
+            # filename, extension = os.path.splitext(p)
+            if p not in self._signals.keys():
+                print("adding file to signal set :\n",p,"\n")
+                self.flist.append(p)
+                # self._signals[self.flist.index(p)] = None
+                self._signals[p] = None
             else:
-                raise ValueError("path string not valid?!")
+                print(os.path.basename(p), "is already in our path db -> see grapher.SigPack.show")
+        else:
+            raise ValueError("path string not valid?!")
 
-            yield self.flist.index(p)
+        return self.flist.index(p)
 
     def prettify(self):
         # tighten up the margins
@@ -156,27 +203,34 @@ class SigPack(object):
     # currently assumes homegenity in type(items)
         # if they're simple int-indices convert to paths now
         # paths = [flist[elem] for elem in items if type(elem) == int]
+
         paths = []
         for i in items:
+
+            # int-index : get the path we have stored
             if isinstance(i,int):
         #TODO: create a get index from path method...?
                 paths.append(self.flist[i])
+
+            # path string : add it if we don't have it
             elif isinstance(i, str):
-                self.add(i)
+                self.add(i) and paths.append(i)
+
+            # some other nested sequence full of int shit?
             else:
                 paths.extend([self.flist[e] for e in i])
 
         # paths = [self.flist[elem] for elem in items if type(elem) == int]
 
-        if len(paths) == 0:
-        # (i.e. if not ints)
-            paths = items
+        # if len(paths) == 0:
+        # # (i.e. if not ints)
+        #     paths = items
 
-            indices = [] # not used here...
+            indices = [] # not used here...?
 
             # add the paths to our db
-            for i in self.add(paths):
-                indices.append(i)
+            # for i in self.add(paths):
+            #     indices.append(i)
 
         # plot the paths...
         for axis, lines in self._plot(paths):
@@ -221,9 +275,6 @@ class SigPack(object):
             ax = self.fig.add_subplot(len(keys), 1, icount + 1)
             lines = ax.plot(t, self.vector(key), figure=self.fig)
 
-            # # save mem?
-            # del t
-
             font_style = {'size' : 'small'}
 
             if title == None:
@@ -233,7 +284,7 @@ class SigPack(object):
                 ax.set_title(title, fontdict=font_style)
 
             ax.set_xlabel('Time (s)', fontdict=font_style)
-            yield ax, lines
+            yield (ax, lines)
 
     @property
     def get_figure():
@@ -242,7 +293,7 @@ class SigPack(object):
     def find_wavs(self, sdir):
         self.flist = file_scan('.*\.wav$', sdir)
         for i, path in enumerate(self.flist):
-            self._vectors[i] = None
+            self._signals[i] = None
         print("found", len(self.flist), "files")
 
 def vline(axis, time, label='this is a line?', colour='r'):
@@ -341,7 +392,7 @@ def scr_dim():
 
 def test():
     # example how to use the lazy plotter
-    sp = SigPack([])
+    sp = SigSet()
     sp.find_wavs('/home/tyler/code/python/wavs/')
     # wp.plot(0)
     return sp
