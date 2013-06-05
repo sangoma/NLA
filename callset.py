@@ -19,6 +19,7 @@
 import itertools
 import grapher
 import AEParse
+import sound
 # import numpy as np
 # import matplotlib
 
@@ -50,12 +51,14 @@ def field_select(index_itr):
 # (which was the whole point of all this abstract fp nonsense in the first place!)
 # WARNING this yields items in order which they arrive from 'itr', NOT the order requested
 def iter_select(indices, itr):
-    ind = [i for i in indices]
-    for i, e in enumerate(itr):
-        if i in ind:
-            yield e
-        else:
-            continue
+    # ind = [i for i in indices]
+    i_set = set(i for i in indices)
+    return (e for (i, e) in enumerate(itr) if i in i_set)
+    # for i, e in enumerate(itr):
+    #     if i in ind:
+    #         yield e
+    #     else:
+    #         continue
 
 # generate a column iterator
 def field_iter(field_index, lst_of_entries):
@@ -118,10 +121,10 @@ class CallSet(object):
         self._fields       = []
         self._entries      = []
         self._destinations = set()
-        self.grapher       = grapher.SigPack([])
+        self.grapher       = grapher.SigSet()
 
     def _reload(self):
-        self._dup_dest = 0#{{{
+        self._dup_dest = 0 #{{{
         self._entries.clear()
         self._destinations.clear()
         add_package_to_callset(self, self._logs_pack)
@@ -172,8 +175,33 @@ class CallSet(object):
         '''plot range of calls from start to stop index'''
         self.plot(range(start, stop + 1))
 
-    def plot(self, *args):
+    # TODO: pass kwargs automatically to sound.sound?  can you do this in python???
+    def playback(self, index, start_t=0, stop_t=None, from_connect=False):
+        ''' play entire wav file from beginning to end for call at index'''
+        # obtain cid
+        cid = self.entry(index)[self._cid_index]
+        # grab call log obj
+        cl = self._logs_pack.call_logs[cid]
+        if cl.wav:
+            if cl.wav not in self.grapher:
+                self.grapher.add(cl.wav)
+            if from_connect:
+                start_t=cl.audio_connect_time
 
+            # TODO: need to introduce the signal obj to grapher...
+            # play the signal
+            sound.sound(self.grapher.vector(cl.wav), 8e3, start=start_t, stop=stop_t)
+        else:
+            print("WARNING : no wave files were found for index",index,"- cid",cid)
+            print("no playback available...")
+
+    # TODO: a better name for this guy?
+    def connect_playback(self, index, stop_t=None):
+        '''convenience method to playback only from the 200 OK'''
+        self.playback(index, stop_t=stop_t, from_connect=True)
+
+    def plot(self, *args):
+        '''plot call recordings by index'''
         indices = []
         for i in args:
             if isinstance(i, int):
@@ -182,6 +210,7 @@ class CallSet(object):
                 indices.extend([e for e in i])
         indices.sort()
 
+        # TODO: factor this index2call-log nonsense into it's own method?
         cls = {}
         for index, entry in zip(indices, self.select(indices)):
             cid = entry[self._cid_index]
@@ -209,9 +238,11 @@ class CallSet(object):
                 for attr in vars(prob_parser).values():
                     if isinstance(attr, AEParse.ProbSequence) and len(attr.prob) > 0:
                         px ,py = attr.get_ts()
-                        print("index = ", cs_index)
-                        print("times = ",px,"\nprobs = ", py)
-                        print("type =", attr.name, " colour =", attr.colour, "\n")
+
+                        # debug...
+                        # print("index = ", cs_index)
+                        # print("times = ",px,"\nprobs = ", py)
+                        # print("type =", attr.name, " colour =", attr.colour, "\n")
 
                         # plot them probs and store only unique lines
                         lines[attr.name], = ax.plot(px, py, label=str(attr.name),
@@ -228,14 +259,6 @@ class CallSet(object):
                 else:
                     print("Warning:",cl.cid,"connect time is too large to plot with value '", connect_time,"'")
 
-            # ax.legend(loc='lower center',
-            #           bbox_to_anchor=(0.5, 1.05),
-            #           ncol=3, fancybox=True, shadow=True)
-            # ax.legend(loc=0)
-
-            # pretty it up!
-            self.grapher.prettify()
-
             # Put a legend below the last axis
             self.grapher.fig.legend(lines.values(),
                                     lines.keys(),
@@ -245,6 +268,8 @@ class CallSet(object):
                                     # fancybox=True,
                                     # shadow=True,
                                     ncol=6)
+            # pretty it up!
+            # self.grapher.prettify()
             # show it!
             self.grapher.fig.show()
 
