@@ -2,7 +2,7 @@
 
 '''
 Copyright (C) 2013 dave.crist@gmail.com
-(with small additions by tgoodlet@gmail.com)
+extended by tgoodlet@gmail.com
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this
 software and associated documentation files (the "Software"), to deal in the Software
@@ -19,10 +19,14 @@ ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 '''
 
-try: import tempfile, wave, subprocess, os, signal, struct, threading, sys
+try: import tempfile, wave, subprocess, os, signal, struct, threading, sys#, contextlib
 except ImportError as imperr : print(imperr)
 
 # globals
+
+# audio app cmds
+snd_utils = {'sox': ['sox','-','-d']}
+
 # but Popen uses the alias DEVNULL anyway...?
 FNULL = open(os.devnull,'w')
 
@@ -35,33 +39,24 @@ def launchWithoutConsole(args, output=False):
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
 
-    # if output:
-    #     std_out = std_err = subprocess.PIPE
-    # else:
-    #     std_out = std_err = FNULL
-
-    # return subprocess.Popen(args,
-    #                             stdin=subprocess.PIPE,
-    #                             stdout=std_out,
-    #                             stderr=std_err,
-    #                             # shell=False,
-    #                             startupinfo=startupinfo)
     if output:
         return subprocess.Popen(args,
-                                # bufsize=1,
+                                bufsize=1,
                                 stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE,
                                 # stderr=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
                                 startupinfo=startupinfo)
     else:
         return subprocess.Popen(args,
                                 stdin=subprocess.PIPE,
-                                stdout=FNULL,
+                                stdout=subprocess.DEVNULL,
                                 stderr=FNULL,
                                 startupinfo=startupinfo)
 # sound player
 def sound(itr, fs, bitdepth=16,
           start=0, stop=None,
+          app = 'sox',
           autoscale=True,
           level =-18.0,        # volume in dBFS
           output=False):
@@ -82,8 +77,6 @@ def sound(itr, fs, bitdepth=16,
 
     # slicing should work for most itr
     itr = itr[start:stop]
-    print('start is', start)
-    print("len of itr is", len(itr))
 
     #for now, assume 1-D iterable
     mult = 1
@@ -94,7 +87,6 @@ def sound(itr, fs, bitdepth=16,
         mult = A * float(mval) / max(itr)
 
     #create file in memory
-    #with tempfile.SpooledTemporaryFile() as memFile:
     memFile = tempfile.SpooledTemporaryFile()
 
     # create wave write objection pointing to memFile
@@ -134,33 +126,14 @@ def sound(itr, fs, bitdepth=16,
               "{0:.2f} seconds\n({1:.3f} thousand samples at sample "
               "rate of {2:.3f} kHz)".format(1.0*len(itr)/fs, len(itr)/1000., int(fs)/1000.))
 
-        # p = launchWithoutConsole(['sox','-','-d'], output=True)
+        # look up the cmdline listing
+        cmd = snd_utils[app]
+        # launch the process
+        p = launchWithoutConsole(cmd, output=True)
 
-        tf = tempfile.TemporaryFile(buffering=8)
-        p = subprocess.Popen(['sox','-','-d'],
-                                # bufsize=0,
-                                stdin=subprocess.PIPE,
-                                # stderr=subprocess.PIPE,
-                                stdout=subprocess.PIPE)
-        # from queue import Queue, Empty  # python 3.x
-        # q = Queue()
-
-        # t = threading.Thread( target=run, kwargs={'p': p} ) #, q))
-        # t.daemon = True  # thread dies with program
-        # # state = ProcOutput(p)
-        # t.start()
-
-        # ... do other things here
-
-        # read line without blocking
-        # try:  line = q.get_nowait() # or q.get(timeout=.1)
-        # except Empty:
-        #     print('no output yet')
-        # else: # got line
-        #     print("printing line...")
-        #     print(line)
-            # ... do something with line
-
+        t = threading.Thread( target=run, kwargs={'p': p} ) #, q))
+        t.daemon = True  # thread dies with program
+        t.start()
         # state.join()
 
     except:
@@ -172,13 +145,14 @@ def sound(itr, fs, bitdepth=16,
 
     try:
         p.communicate(memFile.read())
-        p.wait()
+        print("finished communication...")
+        # p.wait()
 
     except:
         print("E: Unable to send in-memory wave file to stdin of sox subprocess.")
         waveWrite.close()
         return None
-    #os.kill(p.pid,signal.CTRL_C_EVENT)
+#os.kill(p.pid,signal.CTRL_C_EVENT)
 #end def sound(itr,samprate=8000,autoscale=True)
 
 # # threaded class to hold cursor state info
@@ -193,58 +167,28 @@ def sound(itr, fs, bitdepth=16,
 #     for line in sys.stdout.readline():
 #         print line
 
-    # p = subprocess.Popen('rsync -av /etc/passwd /tmp'.split(),
-    #         shell=False,
-    #         stdout=subprocess.PIPE,
-    #         stderr=subprocess.PIPE)
-    # self.stdout, self.stderr = p.communicate()
-    # setinel is "" (search for blank line...)
-    # for line in iter(sys.stdin.readline, ""):
-    # for line in iter(proc.stderr.readline, b''):
-
-    # proc.stderr.flush()
-    # for line in iter(proc.stderr.readline, b''):
-    #     # queue.put(line)
-    #     print(line)
-
 def run(p): #, queue):
-    # while True:
-        # line = p.stderr.readline()
-        # if not line:
-        #     break
-        for line in unbuffered(p):
-            print(line)
-        # print("yes maam!")
     # Poll process for new output until finished
-        # while True:
-        #     nextline = p.stdout.readline()
-        #     if nextline == b'' and p.poll() != None:
-        #         break
-        #     queue.put(nextline)
-        #     print(nextline)
-        #     sys.stdout.write(nextl)
-        #     sys.stdout.flush()
-    # for line in f.readline():
+    for b in unbuffered(p, stream='stderr'):
+        print(b)
 
-
-import contextlib
 # Unix, Windows and old Macintosh end-of-line
 newlines = ['\n', '\r\n', '\r']
-def unbuffered(proc, stream='stdout'):
+def unbuffered(proc, stream='stdout', nbytes=1):
     stream = getattr(proc, stream)
-    with contextlib.closing(stream):
-        while True:
-            out = []
-            # read a byte
-            last = stream.read(1)
-
-            # Don't loop forever
-            if last == '' and proc.poll() is not None:
-                break
-
-            # read a byte at a time...
+    read = lambda : os.read(stream.fileno(), nbytes)
+    out = []
+    while proc.poll() is None:
+        # read a byte
+        last = read().decode()
+        try:
+            # read a byte at a time until eol...
             while last not in newlines:
                 out.append(last)
-                last = stream.read(1)
-            out = ''.join(out)
-            yield out
+                last = read().decode()
+        except:
+            print("finished piping...")
+            break
+        else:
+            yield ''.join(out)
+            out.clear()
