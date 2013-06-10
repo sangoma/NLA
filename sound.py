@@ -1,8 +1,8 @@
-# sound4python module
 
+# sound4python module
 '''
 Copyright (C) 2013 dave.crist@gmail.com
-extended by tgoodlet@gmail.com
+edited and extended by tgoodlet@gmail.com
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this
 software and associated documentation files (the "Software"), to deal in the Software
@@ -30,7 +30,7 @@ snd_utils = {'sox': ['sox','-','-d']}
 # but Popen uses the alias DEVNULL anyway...?
 FNULL = open(os.devnull,'w')
 
-def launchWithoutConsole(args, output=False):
+def launch_without_console(args, strm_output=False):
     """Launches args windowless and waits until finished"""
 
     startupinfo = None
@@ -39,23 +39,32 @@ def launchWithoutConsole(args, output=False):
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
 
-    if output:
-        return subprocess.Popen(args,
-                                bufsize=1,
-                                stdin=subprocess.PIPE,
-                                stdout=subprocess.PIPE,
-                                # stderr=subprocess.PIPE,
-                                stderr=subprocess.PIPE,
-                                startupinfo=startupinfo)
+    if strm_output:
+
+        # creat process
+        p = subprocess.Popen(args,
+                         bufsize=1,
+                         stdin=subprocess.PIPE,
+                         stdout=subprocess.PIPE,
+                         # stderr=subprocess.PIPE,
+                         stderr=subprocess.PIPE,
+                         startupinfo=startupinfo)
+
+        # create a thread to handle app stream parsing
+        t = threading.Thread( target=run, kwargs={'proc': p} ) #, q))
+        t.daemon = True  # thread dies with program
+        t.start()
+        # state.join()
+        return p
+
     else:
         return subprocess.Popen(args,
                                 stdin=subprocess.PIPE,
                                 stdout=subprocess.DEVNULL,
-                                stderr=FNULL,
+                                # stderr=FNULL,
                                 startupinfo=startupinfo)
 # sound player
-def sound(itr, fs, bitdepth=16,
-          start=0, stop=None,
+def sound(itr, fs, bitdepth=16, start=0, stop=None,
           app = 'sox',
           autoscale=True,
           level =-18.0,        # volume in dBFS
@@ -129,12 +138,7 @@ def sound(itr, fs, bitdepth=16,
         # look up the cmdline listing
         cmd = snd_utils[app]
         # launch the process
-        p = launchWithoutConsole(cmd, output=True)
-
-        t = threading.Thread( target=run, kwargs={'p': p} ) #, q))
-        t.daemon = True  # thread dies with program
-        t.start()
-        # state.join()
+        p = launch_without_console(cmd, strm_output=output)
 
     except:
         print("\nE: Unable to launch sox.")
@@ -145,7 +149,7 @@ def sound(itr, fs, bitdepth=16,
 
     try:
         p.communicate(memFile.read())
-        print("finished communication...")
+        print(app,"communication completed...")
         # p.wait()
 
     except:
@@ -167,28 +171,59 @@ def sound(itr, fs, bitdepth=16,
 #     for line in sys.stdout.readline():
 #         print line
 
-def run(p): #, queue):
+def run(proc): #, queue):
     # Poll process for new output until finished
-    for b in unbuffered(p, stream='stderr'):
+    for b in unbuffered(proc, stream='stderr'):
+        # print("next line...\n")
         print(b)
+
+    # stream = proc.stderr
+    # nbytes = 1
+    # # stream = getattr(proc, stream)
+    # read = lambda : os.read(stream.fileno(), nbytes)
+    # while proc.poll() is None:
+    #     out = []
+    #     # read a byte
+    #     try:
+    #         last = read().decode()
+    #         print(last)
+    #     # in case the proc closes and we don't catch it with .poll
+    #     except ValueError:
+    #         print("finished piping...")
+    #         break
+
+        # try:
+        #     # read a byte at a time until eol...
+        #     while last not in newlines:
+        #         out.append(last)
+        #         last = read().decode()
+        # except:
+        #     print("finished piping...")
+        #     break
+        # else:
+        #     print(out)
+            # out.clear()
 
 # Unix, Windows and old Macintosh end-of-line
 newlines = ['\n', '\r\n', '\r']
 def unbuffered(proc, stream='stdout', nbytes=1):
     stream = getattr(proc, stream)
     read = lambda : os.read(stream.fileno(), nbytes)
-    out = []
     while proc.poll() is None:
+        out = []
         # read a byte
         last = read().decode()
         try:
-            # read a byte at a time until eol...
+            # read bytes until eol...
             while last not in newlines:
                 out.append(last)
                 last = read().decode()
-        except:
+            if len(out) == 0: continue
+        # in case the proc closes and we don't catch it with .poll
+        except ValueError:
             print("finished piping...")
             break
         else:
-            yield ''.join(out)
-            out.clear()
+            # yield ''.join(out)
+            yield out
+            # out.clear()
