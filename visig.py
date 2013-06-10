@@ -18,42 +18,43 @@ import gc
 from collections import OrderedDict
 
 # select values from an itr by index
-def itr_iselect(indices, itr):
-    i_set = set(i for i in indices)
+def itr_iselect(itr, *indices):
+    i_set = set(indices)
     return (e for (i, e) in enumerate(itr) if i in i_set)
 
 # like it sounds : an ordered, int subscriptable dict
 class OrderedIndexedDict(OrderedDict):
     def __getitem__(self, key):
         # if it's already mapped get the value
-        if key in self:
+        if isinstance(key, slice ):
+            print("you've passed a slice! with start",key.start,"and stop",key.stop)
+            return OrderedIndexedDict(self.values())[key]
+
+        elif key in self:
             return OrderedDict.__getitem__(self, key)
-        else:
-            if isinstance(key, int):
-                # TODO: faster way to implement this?
-                # what about key = -1 like in lists?  fack!...
-                # slices ....gack!?
-                for i, e in enumerate(self.values()):
-                    if i == key:
-                        return e
-                    else:
-                        continue
-                # if we run out of elements
-                raise IndexError("index out of range")
+
+        elif isinstance(key, int):
+            # TODO: is this the fastest way to implement this?
+            return list(self.values())[key]
+            # what about key = -1 like in lists?  fack!...
+            # slices...gack!?
+            # for i, e in enumerate(self.values()):
+            #     if i == key:
+            #         return e
+            # # if we run out of elements
+            # raise IndexError("index out of range")
 
     def __setitem__(self, key, value):
-        if isinstance(key, int):
-            # don't give me ints bitch...
-            raise KeyError("key can not be of type integer")
-        else:
-            OrderedDict.__setitem__(self, key, value)
+        # don't give me ints bitch...
+        if isinstance(key, int): raise KeyError("key can not be of type integer")
+        else: OrderedDict.__setitem__(self, key, value)
 
 # meant to be used interactively as well as programatcially!?
 class SigSet(object):
-    def __init__(self):
+    def __init__(self, items=None):
         self.flist = []
-        self._signals = OrderedIndexedDict() # ahhh yeah the fancy stuff...
-        # self._signals = {}
+        # self._signals = OrderedIndexedDict() # ahhh yeah the fancy stuff...
+        self._signals = {}
         self._lines = []
         self.fig = None
         # self.add(wave_file_list)
@@ -155,7 +156,7 @@ class SigSet(object):
         if os.path.exists(p):
             # filename, extension = os.path.splitext(p)
             if p not in self._signals.keys():
-                print("adding file to signal set :\n",p,"\n")
+                # print("adding file to signal set :\n",p,"\n")
                 self.flist.append(p)
                 # self._signals[self.flist.index(p)] = None
                 self._signals[p] = None
@@ -214,7 +215,8 @@ class SigSet(object):
 
             # path string : add it if we don't have it
             elif isinstance(i, str):
-                self.add(i) and paths.append(i)
+                self.add(i)
+                paths.append(i)
 
             # some other nested sequence full of int shit?
             else:
@@ -392,10 +394,10 @@ def scr_dim():
 
 def test():
     # example how to use the lazy plotter
-    sp = SigSet()
-    sp.find_wavs('/home/tyler/code/python/wavs/')
+    ss = SigSet()
+    ss.find_wavs('/home/tyler/code/python/wavs/')
     # wp.plot(0)
-    return sp
+    return ss
 
 def lazy_test():
     pass

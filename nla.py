@@ -2,7 +2,7 @@
 # a tool for analyzing NCA logs - NCA Log Analyzer
 # front end script which should be run on a cpa-stats package
 
-import sys, getopt
+import sys, getopt, os
 from imp import reload
 
 # custom modules
@@ -27,7 +27,7 @@ Notes:
 Usage: nla.py <cpa-stats.csv> <logs directory>\n''')
 
 # check if ipython running...better way to do this?
-def in_ipython():
+def _in_ipython():
     try:
         __IPYTHON__
     except NameError:
@@ -35,70 +35,78 @@ def in_ipython():
     else:
         return True
 
-# def main(argv):
-# main(sys.argv)
-"""main entry point and options parsing"""
-argv = sys.argv
-try:
-    (optlist, args) = getopt.gnu_getopt(argv[1:], "h:s:", ("help","stats"))
-except getopt.GetoptError as exc:
-    print("Error:" +  exc)
-    sys.exit(usage())
+# check for sox
+def _check_sox():
+    return os.WEXITSTATUS(os.system('type sox')) == 0
 
-for opt in optlist:
-    if opt[0] == "-h" or opt[0] == "--help":
-        usage()
-        sys.exit(0)
-    if opt[0] == "-s" or opt[0] == "--stats":
-        showstats = True
-        print("requested csv statistics summary ONLY!\n"
-              "calling handy gawk script...\n")
-        # TODO: actually call the gawk script from here...
-        continue
-    if opt[0] == "--skip-package-gen":
-        gen_lin = False
-        gen_sa  = False
-        continue
+def main(argv):
+    """main entry point and options parsing"""
+    argv = sys.argv
+    try:
+        (optlist, args) = getopt.gnu_getopt(argv[1:], "h:s:", ("help","stats"))
+    except getopt.GetoptError as exc:
+        print("Error:" +  exc)
+        sys.exit(usage())
 
-if len(args) < 2:
-    print("E: not enough arguments!\n")
-    sys.exit(usage())
+    for opt in optlist:
+        if opt[0] == "-h" or opt[0] == "--help":
+            usage()
+            sys.exit(0)
+        if opt[0] == "-s" or opt[0] == "--stats":
+            showstats = True
+            print("requested csv statistics summary ONLY!\n"
+                  "calling handy gawk script...\n")
+            # TODO: actually call the gawk script from here...
+            continue
+        if opt[0] == "--skip-package-gen":
+            gen_lin = False
+            gen_sa  = False
+            continue
 
-elif len(args) > 2:
-    print("Error: excess args '%s ...'" % args[0])
-    sys.exit(usage())
-else:
-    csv_file = args[0]
-    logs_dir = args[1]
+    if len(args) < 2:
+        print("E: not enough arguments!\n")
+        sys.exit(usage())
 
-# field VALUE used to 'segment' sub-callsets in the object interface
-disjoin_field  = 'NCA Engine Result'
+    elif len(args) > 2:
+        print("Error: excess args '%s ...'" % args[0])
+        sys.exit(usage())
+    else:
+        csv_file = args[0]
+        logs_dir = args[1]
 
-# compile logs package into memory (WARNING this creates new packages with duplicate data)
-logs = callset.LogPackage(csv_file, logs_dir)
+    # field VALUE used to 'segment' sub-callsets in the object interface
+    disjoin_field  = 'NCA Engine Result'
 
-cs = None
-def reload_cs(cs=cs):
-    # build a callset interface
-    if cs is not None:
-        del cs
-    return callset.new_callset(logs, disjoin_field)
+    # compile logs package into memory (WARNING this creates new packages with duplicate data)
+    logs = callset.LogPackage(csv_file, logs_dir)
 
-cs = reload_cs()
+    cs = None
+    def reload_cs(cs=cs):
+        # build a callset interface
+        if cs is not None:
+            del cs
+        return callset.new_callset(logs, disjoin_field)
 
-if in_ipython():
-    print("\nYou Devil! You're already inside the ipython shell!\n"
-          "FYI : It will also open automatically if you just run this script from the shell...")
-    pass
-else:
-    print("\nattempting to start ipython shell...\n")
-    try: from IPython import embed
-    except ImportError as imperr : print(imperr)
-    # this call anywhere in your program will start IPython
-    embed()
+    cs = reload_cs()
+
+    if _in_ipython():
+        print("\nYou Devil! You're already inside the ipython shell!\n"
+              "FYI : It will also open automatically if you just run this script from the shell...")
+        pass
+    else:
+        print("\nattempting to start ipython shell...\n")
+        try: from IPython import embed
+        except ImportError as imperr : print(imperr)
+        # this call anywhere in your program will start IPython
+        embed()
+
+    # cs.AnsweringMachine.playback(0)
+
+# enter friend...
+sys.exit(main(sys.argv))
 
 # HINT: to create a new subset try something like,
 # subset = cs.factory.new_subset(parent, filter_function)
 # where the filter_function is something like -> filter_by_field(3, gt, 500)
-# here 3 is field index, gt ('greater then') is a comparison function, 500 is a const to compare against
+# here 3 is field index three, gt ('greater then') is a comparison function, 500 is a const to compare against
 # see callset.py for more details

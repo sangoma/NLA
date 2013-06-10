@@ -17,7 +17,7 @@
 # DONE - os.walk instead of 'find' utility
 
 import itertools
-import grapher
+import visig
 import AEParse
 import sound
 # import numpy as np
@@ -52,7 +52,7 @@ def field_select(index_itr):
 # WARNING this yields items in order which they arrive from 'itr', NOT the order requested
 def iter_select(indices, itr):
     # ind = [i for i in indices]
-    i_set = set(i for i in indices)
+    i_set = set(indices)
     return (e for (i, e) in enumerate(itr) if i in i_set)
     # for i, e in enumerate(itr):
     #     if i in ind:
@@ -121,15 +121,15 @@ class CallSet(object):
         self._fields       = []
         self._entries      = []
         self._destinations = set()
-        self.grapher       = grapher.SigSet()
+        self.sig_set       = visig.SigSet()
 
     def _reload(self):
         self._dup_dest = 0 #{{{
         self._entries.clear()
         self._destinations.clear()
         add_package_to_callset(self, self._logs_pack)
-        if self.grapher is not None:
-            self.grapher.free_cache()
+        if self.sig_set is not None:
+            self.sig_set.free_cache()
         #}}}
 
     def select(self, index_itr):
@@ -183,14 +183,14 @@ class CallSet(object):
         # grab call log obj
         cl = self._logs_pack.call_logs[cid]
         if cl.wav:
-            if cl.wav not in self.grapher:
-                self.grapher.add(cl.wav)
+            if cl.wav not in self.sig_set:
+                self.sig_set.add(cl.wav)
             if from_connect:
                 start_t=cl.audio_connect_time
 
-            # TODO: need to introduce the signal obj to grapher...
+            # TODO: need to introduce the signal obj to visig...
             # play the signal
-            sound.sound(self.grapher.vector(cl.wav), 8e3, start=start_t, stop=stop_t)
+            sound.sound(self.sig_set.vector(cl.wav), 8e3, start=start_t, stop=stop_t)
         else:
             print("WARNING : no wave files were found for index",index,"- cid",cid)
             print("no playback available...")
@@ -211,6 +211,7 @@ class CallSet(object):
         indices.sort()
 
         # TODO: factor this index2call-log nonsense into it's own method?
+        # NO!!! we NEED to change the whole '_entries' paradigm!
         cls = {}
         for index, entry in zip(indices, self.select(indices)):
             cid = entry[self._cid_index]
@@ -226,7 +227,7 @@ class CallSet(object):
         lines = {}
         if cls:
             wavs = [cl.wav for cl in cls.values()]
-            for ax, cs_index, cl in zip(self.grapher.itr_plot(wavs), cls.keys(), cls.values()):
+            for ax, cs_index, cl in zip(self.sig_set.itr_plot(wavs), cls.keys(), cls.values()):
 
                 # label y and set range
                 ax.set_ylabel(str(cs_index)+ ":" + str(self.entry(cs_index)[self._result_index]))
@@ -255,12 +256,12 @@ class CallSet(object):
                 connect_time = cl.audio_connect_time
                 if max(ax.get_xlim()) > connect_time:
                     lab = "200 OK - "+ str(round(connect_time, 2)) +"s"
-                    grapher.vline(ax, connect_time, label=lab)
+                    visig.vline(ax, connect_time, label=lab)
                 else:
                     print("Warning:",cl.cid,"connect time is too large to plot with value '", connect_time,"'")
 
             # Put a legend below the last axis
-            self.grapher.fig.legend(lines.values(),
+            self.sig_set.fig.legend(lines.values(),
                                     lines.keys(),
                                     # loc='lower right',
                                     loc=(0,0),
@@ -269,16 +270,16 @@ class CallSet(object):
                                     # shadow=True,
                                     ncol=6)
             # pretty it up!
-            # self.grapher.prettify()
+            self.sig_set.prettify()
             # show it!
-            self.grapher.fig.show()
+            self.sig_set.fig.show()
 
         else:
             print("\nsorry no calls were found in subset '" + self._id + "' for indices:", indices)
             print("-> see cs."+self._id+".show")
 
     def close_figure(self):
-        self.grapher.close_fig()
+        self.sig_set.close_fig()
 
     # @property
     def summary(self, field=None):
@@ -340,6 +341,8 @@ class SubSet(CallSet):
     @property
     def _entries(self):
         return self._filter(self._parent._entries)
+
+#   def __getitem__
 
 # CallSet utils
 def add_package_to_callset(callset, logs_package):
