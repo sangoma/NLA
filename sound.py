@@ -60,7 +60,7 @@ def launch_without_console(args, strm_output=False):
     else:
         return subprocess.Popen(args,
                                 stdin=subprocess.PIPE,
-                                stdout=subprocess.DEVNULL,
+                                stdout=FNULL,
                                 # stderr=FNULL,
                                 startupinfo=startupinfo)
 # sound player
@@ -129,12 +129,11 @@ def sound(itr, fs, bitdepth=16, start=0, stop=None,
     #configure the file object, memFile, as if it has just been opened for reading
     memFile.seek(0)
 
+    # getting here means wroteFrames == True
+    print("\nAttempting to play a mono audio stream of length "
+          "{0:.2f} seconds\n({1:.3f} thousand samples at sample "
+          "rate of {2:.3f} kHz)".format(1.0*len(itr)/fs, len(itr)/1000., int(fs)/1000.))
     try:
-        # getting here means wroteFrames == True
-        print("\nAttempting to play a mono audio stream of length "
-              "{0:.2f} seconds\n({1:.3f} thousand samples at sample "
-              "rate of {2:.3f} kHz)".format(1.0*len(itr)/fs, len(itr)/1000., int(fs)/1000.))
-
         # look up the cmdline listing
         cmd = snd_utils[app]
         # launch the process
