@@ -163,6 +163,11 @@ class CallSet(object):
         '''write out current data objects as to a CPA package'''
         write_package()
 
+    def from_txt(self, f):
+        '''generate a subset determined by the cids in the provided text file and attach the set to the 
+        current callset instance'''
+        pass
+
     # TODO: search for a call based on field, string pair
     def find(self, string):
         pass
@@ -520,7 +525,8 @@ def scan_logs(re_literal, search_dir, method='find'):
         #TODO: os.walk method
 
 def build_log_db(search_dir, name_sep='.', token_index=0):
-    '''recurses subdirs and build a db of logs by cid'''
+    '''recurse subdirs and build a db of logs by cid'''
+    #TODO: maybe include a cid sanity check (say cid > 10000 er sumthin?)
     cid_db   = {}
 
     for path, dirname, filenames in os.walk(search_dir):
@@ -610,18 +616,20 @@ def add_to_dir_package(log_list, dest_dir, output_format='same', remove_str=None
 
 class LogPackage(object):
     '''A LogPackage is the in-memory representation of a customer provided log set.
-    More specifically, a LogSet references the actual data provided by the customer after
+    More specifically, a LogSet references the actual data provided by the customer AFTER
     the call recording data has been converted to linear format.
 
-    A LogSet instance contains the following reference information:
+    A LogSet instance contains the following data elements:
     - file paths to log files which are copied to a new directory of 'prepped' audio files in lpcm format
-    - information parsed from the cdr/.xml
-    - counters of indexing errors between the cpa-stats.csv summary and the actual log files provided'''
+    - information elements parsed from the CDR .xml file
+    - counters for indexing errors between the cpa-stats.csv summary and the actual log files provided'''
 
     def __init__(self, csv_file, logs_dir):
 
         print("attempting to create new log package in memory...")
-        # self._id = callset_id
+        # self._id          = callset_id
+        self._csv_file      = csv_file
+        self._logs_dir      = logs_dir
         self.fields         = {}
         self._field_mask    = []
         self.mask_indices   = []
@@ -633,13 +641,13 @@ class LogPackage(object):
         self.destinations   = set()
 
         # compile data
-        self.load_logs(csv_file, logs_dir)
+        self.compile_logs(self._csv_file, self._logs_dir)
 
     @property
     def length(self):
         return len(self.entries)
 
-    def load_logs(self, csv_file, logs_dir):
+    def compile_logs(self, csv_file, logs_dir):
         """ load a new log package into memory """
 
         # which packages to create? (default=both)
@@ -651,8 +659,8 @@ class LogPackage(object):
         if tuning_dir in logs_dir:
             print("\nINFO : package dir '",logs_dir,"' contains string '",tuning_dir,"'"
                   "\ntreating the package as if its data has been pre-processed...n")
-            gen_lin = False
-            gen_sa = False
+            gen_lin = gen_sa = False
+            # gen_sa = False
 
         else:
             print("no file with '", tuning_dir, "' string in name found!")
