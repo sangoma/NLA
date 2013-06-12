@@ -24,37 +24,52 @@ def itr_iselect(itr, *indices):
 
 # like it sounds : an ordered, int subscriptable dict
 class OrderedIndexedDict(OrderedDict):
+
     def __getitem__(self, key):
         # if it's already mapped get the value
         if isinstance(key, slice ):
+            #TODO: how to handle this?
             print("you've passed a slice! with start",key.start,"and stop",key.stop)
-            return OrderedIndexedDict(self.values())[key]
+            return list(self.values())[key]
+            # return OrderedIndexedDict(self.values())[key]
 
         elif key in self:
             return OrderedDict.__getitem__(self, key)
 
+        # TODO: is this the fastest way to implement this?
         elif isinstance(key, int):
-            # TODO: is this the fastest way to implement this?
-            return list(self.values())[key]
-            # what about key = -1 like in lists?  fack!...
-            # slices...gack!?
-            # for i, e in enumerate(self.values()):
-            #     if i == key:
-            #         return e
-            # # if we run out of elements
-            # raise IndexError("index out of range")
+            # check for out of bounds
+            l = len(self)
+            if l - 1 < key or key < -l : raise IndexError("index out of range")
+
+            # get the root of the doubly linked list (see the OrderedDict implemenation)
+            root = self._OrderedDict__root
+            curr = root.next
+            act = lambda link : link.next
+            if key < 0 :
+                key += 1
+                curr = root.prev
+                act = lambda link : link.prev
+
+            # traverse the linked list for our element
+            for i in range(abs(key)):
+                curr = act(curr)
+
+            return self[curr.key]
+            # old impl...
+            # return list(self.values())[key]
 
     def __setitem__(self, key, value):
         # don't give me ints bitch...
         if isinstance(key, int): raise KeyError("key can not be of type integer")
         else: OrderedDict.__setitem__(self, key, value)
 
-# meant to be used interactively as well as programatcially!?
+# meant to be used interactively as well as programatcially!?!?
 class SigSet(object):
     def __init__(self, items=None):
         self.flist = []
-        # self._signals = OrderedIndexedDict() # ahhh yeah the fancy stuff...
-        self._signals = {}
+        self._signals = OrderedIndexedDict() # ahhh yeah the fancy stuff...
+        # self._signals = {}
         self._lines = []
         self.fig = None
         # self.add(wave_file_list)
