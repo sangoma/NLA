@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # plot and annotate lpcm wave files easily
 
 # TODO;
@@ -26,41 +26,30 @@ class OrderedIndexedDict(OrderedDict):
         if isinstance(key, slice ):
             print("you've passed a slice! with start",key.start,"and stop",key.stop)
             return list(self.values())[key]
-            # return OrderedIndexedDict(self.values())[key]
 
         # if it's already mapped get the value
         elif key in self:
             return OrderedDict.__getitem__(self, key)
 
-        # TODO: is this the fastest way to implement this?
-        # if it's an int iterate the linked list and return the value
+        # FIXME: is this the fastest way to implement this?
+        # if it's an int, iterate the linked list and return the value
         elif isinstance(key, int):
             return self[self._get_key(key)]
             # return self._setget_value(key)
 
     def __setitem__(self, key, value):
-        # don't give me ints bitch...(unless you're chaning a value)
-        # FIXME: this should reasign to the value @ int-key
+        # don't give me ints bitch...(unless you're changing a value)
         if isinstance(key, int):# raise KeyError("key can not be of type integer")
-            # value = self._getset_value(key, new_value=value)
             key = self._get_key(key)
 
         OrderedDict.__setitem__(self, key, value)
-
-        # set
-        # if new_value:
-        #     self[curr.key] = new_value
-        #     return
-        # # or get
-        # else:
-        #     return self[curr.key]
-        # else: OrderedDict.__setitem__(self, key, value)
 
     def _get_key(self, key):
         ''' get the key for a given index'''
         # check for out of bounds
         l = len(self)
-        if l - 1 < key or key < -l : raise IndexError("index out of range")
+        if l - 1 < key or key < -l :
+            raise IndexError("index out of range, len is " + str(l))
 
         # get the root of the doubly linked list (see the OrderedDict implemenation)
         root = self._OrderedDict__root
@@ -72,11 +61,9 @@ class OrderedIndexedDict(OrderedDict):
             key += 1
             curr = root.prev
             act = lambda link : link.prev
-
         # traverse the linked list for our element
         for i in range(abs(key)):
             curr = act(curr)
-
         # return the key
         return curr.key
 
@@ -86,46 +73,75 @@ class SigSet(object):
     '''holds a set of signals for easy data mgmt, playback and plotting'''
     def __init__(self, *args):
         self.flist = []
-        self._signals = OrderedIndexedDict() # ahhh yeah the fancy stuff...
-
+        self._signals = OrderedIndexedDict() # what's underneath...
+        # unpack any file names that might have been passed initially
         if args:
             for i in args:
                 self._sig[i] = None
 
-        # self._signals = {}
         self._lines = []
         self.fig = None
-        # self.add(wave_file_list)
 
         # FIXME: make scr_dim impl more pythonic! like now...
         self.w, self.h = scr_dim()
-
         # get the garbarge truck rolling...
         gc.enable()
 
-    def __contains__(self, key):
-        # check if in our dict keys
-        return key in self._signals
+    def __getattr__(self, attr):
+        '''delegate as much as possible to the oid'''
+        return getattr(self._signals, attr)
+
+    # def __contains__(self, key):
+    #     # check if in our dict keys
+    #     return key in self._signals
+
+    # def __iter__(self):
+    #     '''delegate iteration to the oid'''
+    #     return self._signals.__iter__()
 
     def __getitem__(self, key):
+        '''lazy loading of signals and delegation to the oid'''
+        # path exists in our set?
+        # if key in self._signals or self._signals[key]:
+        if isinstance(self._signals[key], np.ndarray):
+            # print("the file ", self.flist[index], "is already cached in _signals dict!")
+            pass
+        # path exists but signal not yet loaded
+        else:
+            # if isinstance(key, int):
+                # key = self._signals._get_key(key)
+            self._load_sig(key)
         return self._signals[key]
+        # else: raise KeyError("no entry in the signal set for key "+str(key))
+        # # request for an index which doesn't reference a path
+        # elif path not in self._signals.keys(): #     # print("E: you requested an index out of range!")
+        #     raise IndexError("no file path exists for index : " + str(path) + "\n"
+        #                      "Has it been added to your Signal Pack? -> see SigPack.show")
+        # else:
+        #     raise IndexError("weird stuffs happening heres?!")
+        # return self._signals[key]
+
+        # if path in self._signals.keys():
 
     def _load_sig(self, path):
-        try:
-            print("loading wave file : ",os.path.basename(path))
+        if isinstance(path, int):
+            path = self._signals._get_key(path)
+        if path in self._signals:
+            #TODO: loading should be completed by Signal class (i.e. signal specific)
+            try:
+                print("loading wave file : ",os.path.basename(path))
+                # read audio data and params
+                sig, self.fs, self.bd = wav_2_np(path)
+                # (self.fs, sig) = wavfile.read(self.flist[index])
 
-            # read audio data and params
-            sig, self.fs, self.bd = wav_2_np(path)
-            # (self.fs, sig) = wavfile.read(self.flist[index])
+                amax = 2**(self.bd - 1) - 1
+                sig = sig/amax
+                self._signals[path] = sig
+                print("INFO |->",len(sig),"samples =",len(sig)/self.fs,"seconds @ ",self.fs," Hz")
+            except:
+                raise Exception("Failed to load wave file!\nEnsure that the wave file exists and is in LPCM format")
+        else: raise KeyError("no entry in the signal set for key '"+str(path)+"'")
 
-            amax = 2**(self.bd - 1) - 1
-            sig = sig/amax
-            self._signals[path] = sig
-            print("INFO |->",len(sig),"samples =",len(sig)/self.fs,"seconds @ ",self.fs," Hz")
-        except:
-            raise Exception("Failed to load wave file!\nEnsure that the wave file exists and is in LPCM format")
-
-    @property
     def show(self):
         '''pretty print the internal path list'''
         #FIXME: throw an error if table is empty
@@ -134,7 +150,7 @@ class SigSet(object):
         if len(self._signals):
             print_table(map(os.path.basename, self._signals.keys()))
         else:
-            print("E: no file list exists yet!?...")
+            print("E: no signal entries exist yet!?...")
 
     def close_all_figs(self):
         plt.close('all')
@@ -155,34 +171,6 @@ class SigSet(object):
         else:
             print("no figure handle exists?")
 
-    def vector(self, elem):
-        # could be an int-index or path
-        if isinstance(elem, str):
-            path = elem
-        elif isinstance(elem, int):
-            path = self.flist[elem]
-        else:
-            raise IndexError("unsupported index :", elem)
-
-        # path exists and vector loaded
-        if path in self._signals.keys():
-            # path exists and vector is loaded in mem
-            if isinstance(self._signals[path], np.ndarray):
-                # print("the file ", self.flist[index], "is already cached in _signals dict!")
-                return self._signals[path]
-
-            # path exists but vector not yet loaded
-            elif self._signals.get(path) == None:
-                self._load_sig(path)
-                return self._signals[path]
-
-        # request for an index which doesn't reference a path
-        elif path not in self._signals.keys():
-            # print("E: you requested an index out of range!")
-            raise IndexError("no file path exists for index : " + str(path) + "\n"
-                             "Has it been added to your Signal Pack? -> see SigPack.show")
-        else:
-            raise IndexError("weird stuffs happening heres?!")
 
     def add(self, p):
         '''Add a wave file path to the SigPack'''
@@ -312,11 +300,11 @@ class SigSet(object):
 
             # t = np.arange(start_time, len(self.vector(key)) / self.fs, 1/self.fs)
             # set up a time vector
-            t = np.linspace(start_time, len(self.vector(key)) / self.fs, num=len(self.vector(key)))
+            t = np.linspace(start_time, len(self[key]) / self.fs, num=len(self[key]))
             # print("size of t is ", len(t))
 
             ax = self.fig.add_subplot(len(keys), 1, icount + 1)
-            lines = ax.plot(t, self.vector(key), figure=self.fig)
+            lines = ax.plot(t, self[key], figure=self.fig)
 
             font_style = {'size' : 'small'}
 
@@ -331,12 +319,13 @@ class SigSet(object):
 
     @property
     def get_figure():
+        '''here figure is normally a singleton'''
         return self.fig
 
     def find_wavs(self, sdir):
         self.flist = file_scan('.*\.wav$', sdir)
         for i, path in enumerate(self.flist):
-            self._signals[i] = None
+            self._signals[path] = None
         print("found", len(self.flist), "files")
 
 def vline(axis, time, label='this is a line?', colour='r'):
@@ -366,7 +355,7 @@ def line_max_y(axis):
             mx = lm
     return mx
 
-def print_table(itr, field_header=['vector files'], delim='|'):
+def print_table(itr, field_header=['signal files'], delim='|'):
 
     itr = [i for i in itr]
     max_width = max(len(field) for field in itr)
@@ -678,4 +667,4 @@ def lazy_test():
     pass
 
 if __name__ == '__main__':
-    sp = test()
+    ss = test()
