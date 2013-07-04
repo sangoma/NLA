@@ -6,11 +6,11 @@
 #   arbitrarly formatted audio files into numpy arrays
 # - 'Signal' obj which is delegated all data unpacking and metadata
 #   maintenance
-# - animation for simple playback using a cursor on the choses axes (add
-#   mixing?)
+# - animation for simple playback using a cursor on the choses axes (add mixing?)
 # - animation for rt spectrum
 # - capture sreen dimensions using pure python
 
+# required libs
 from imp import reload
 import numpy as np
 import matplotlib.pyplot as plt
@@ -18,16 +18,15 @@ import matplotlib.animation as animation
 #from scipy.io import wavfile
 # from scipy import signal
 # from scipy import fftpack
-import subprocess, os
-import gc
+import subprocess, os, gc
 from collections import OrderedDict
 
 # like it sounds : an ordered, int subscriptable dict
 class OrderedIndexedDict(OrderedDict):
 
     def __getitem__(self, key):
-
-        #TODO: how to handle this? (it's weird since we always have to check first)
+        #FIXME: how to handle slices?
+        #(it's weird since we always have to check first and using the list...)
         if isinstance(key, slice ):
             print("you've passed a slice! with start",key.start,"and stop",key.stop)
             return list(self.values())[key]
@@ -71,12 +70,14 @@ class OrderedIndexedDict(OrderedDict):
         # return the key
         return curr.key
 
-
-# meant to be used interactively as well as programatcially!?!?
-class SigSet(object):
-    '''holds a set of signals for easy data mgmt, playback and plotting'''
+class SigMap(object):
+    '''
+    Wraps an ordered map of signals for easy data/vector mgmt, playback and visualization
+    The mpl figure is managed as a singleton and subplots are used whenever viewing multiple signals
+    The main intent is to avoid needless figure clutter and lines of boilerplate code
+    Feel free to use this class interactively (IPython) as well as programatically
+    '''
     def __init__(self, *args):
-        self.flist = []
         self._signals = OrderedIndexedDict() # what's underneath...
         # unpack any file names that might have been passed initially
         if args:
@@ -93,42 +94,23 @@ class SigSet(object):
         # get the garbarge truck rolling...
         gc.enable()
 
+    # delegate as much as possible to the oid
     def __getattr__(self, attr):
         # FIXME: is this superfluous?
-        '''delegate as much as possible to the oid'''
         return getattr(self._signals, attr)
 
-    # def __contains__(self, key):
-    #     # check if in our dict keys
-    #     return key in self._signals
-
-    # def __iter__(self):
-    #     '''delegate iteration to the oid'''
-    #     return self._signals.__iter__()
+    def __setitem__(self, *args):
+        return self._signals.__setitem__(*args)
 
     def __getitem__(self, key):
         '''lazy loading of signals and delegation to the oid'''
         # path exists in our set?
-        # if key in self._signals or self._signals[key]:
         if isinstance(self._signals[key], np.ndarray):
-            # print("the file ", self.flist[index], "is already cached in _signals dict!")
             pass
         # path exists but signal not yet loaded
         else:
-            # if isinstance(key, int):
-                # key = self._signals._get_key(key)
             self._load_sig(key)
         return self._signals[key]
-        # else: raise KeyError("no entry in the signal set for key "+str(key))
-        # # request for an index which doesn't reference a path
-        # elif path not in self._signals.keys(): #     # print("E: you requested an index out of range!")
-        #     raise IndexError("no file path exists for index : " + str(path) + "\n"
-        #                      "Has it been added to your Signal Pack? -> see SigPack.show")
-        # else:
-        #     raise IndexError("weird stuffs happening heres?!")
-        # return self._signals[key]
-
-        # if path in self._signals.keys():
 
     def _load_sig(self, path):
         if isinstance(path, int):
@@ -145,19 +127,39 @@ class SigSet(object):
                 sig = sig/amax
                 self._signals[path] = sig
                 print("INFO |->",len(sig),"samples =",len(sig)/self.fs,"seconds @ ",self.fs," Hz")
+                return path
             except:
                 raise Exception("Failed to load wave file!\nEnsure that the wave file exists and is in LPCM format")
         else: raise KeyError("no entry in the signal set for key '"+str(path)+"'")
 
+
+    def _prettify(self):
+        # tighten up the margins
+        self.fig.tight_layout(pad=1.03)
+
+    def _init_animate(self, axis):
+    # return a baseline axes/lines set?
+        return self._cur_ax.get_lines()
+        # line = vline(axis, time, colour=green)
+
+    def _animate(self, iframe):
+    # func which does the anim sequentially
+        pass
+
+    def get_animation(self):
+        pass
+
+    # convenience props
+    figure = property(lambda self: self.fig)
+    flist  = property(lambda self: [f for f in self.keys()])
+
+    @property
     def show(self):
         '''pretty print the internal path list'''
-        #FIXME: throw an error if table is empty
-        # if self.flist:
-        #     print_table(map(os.path.basename, self.flist))
-        if len(self._signals):
+        try:
             print_table(map(os.path.basename, self._signals.keys()))
-        else:
-            print("E: no signal entries exist yet!?...")
+        except:
+            raise ValueError("no signal entries exist yet!?...add some first")
 
     def close_all_figs(self):
         plt.close('all')
@@ -179,121 +181,56 @@ class SigSet(object):
         else:
             print("no figure handle exists?")
 
-    def _init_animate(self, axis):
-    # return a baseline axes/lines set?
-        return self._cur_ax.get_lines()
-        # line = vline(axis, time, colour=green)
-
-    def _animate(self, iframe):
-    # func which does the anim sequentially
-        pass
-
-    def get_animation(self):
-        pass
-
-    def add(self, p):
-        '''Add a wave file path to the SigPack'''
-        # '''Can take a single path or a sequence of paths as input'''
-
-        # indices = []
-        # paths = iter(paths) # always make paths an iterable
-
-        # a sequence of paths? -> generate look-up indices
-        # for p in paths:
-        #     print("path = ", p)
+    def add_path(self, p):
+        '''
+        Add a wave file path to the SigPack
+        Can take a single path or a sequence of paths as input
+        '''
         if os.path.exists(p):
             # filename, extension = os.path.splitext(p)
             if p not in self:#._signals.keys():
-                # print("adding file to signal set :\n",p,"\n")
-                # self.flist.append(p)
-                # self._signals[self.flist.index(p)] = None
-                # self._signals[p] = None
-                selfs[p] = None
+                self[p] = None
             else:
-                print(os.path.basename(p), "is already in our path db -> see grapher.SigPack.show")
+                print(os.path.basename(p), "is already in our path db -> see grapher.SigPack.show()")
         else:
             raise ValueError("path string not valid?!")
 
-        return self.flist.index(p)
-
-    def prettify(self):
-        # tighten up the margins
-        self.fig.tight_layout(pad=1.03)
-
     def plot(self, *args):
-        ''' can take inputs of ints, ranges, paths, or ....?'''
-        # axes = []
-        # indices = []
+        '''
+        can take inputs of ints, ranges, paths, or...?
+        meant to be used as an interactive interface...
+        '''
+        axes = [axis for axis in self.itr_plot(args)]
+        self._prettify()
+        return axes
 
-        # for i in args:
-        #     if isinstance(i, int):
-        #     # TODO: this should be wrapped in a seperate method?
-        #         try:
-        #             paths.append(self.flist[i])
-        #         except:
-        #             raise IndexError("E: this Signal Pack does not contain a path for index",i)
-
-        #     elif isinstance(i, str) and i not in self.flist:
-        #         self.add(i)
-        #     else:
-        #         paths.extend([e for e in i])
-
-        # indices.sort()
-        # paths = [flist[elem] for elem in indices if type(elem) == int]
-
-        # if len(paths) == 0:
-        #     print("E: you must specify integer indices which correspond to paths in self.flist\n"
-        #           "see self.show for listing")
-        # else:
-        return [axis for axis in self.itr_plot(args)]
-
-    # a lazy plotter to save aux space?...doubtful
-    def itr_plot(self, items):
-
-    # currently assumes homegenity in type(items)
-        # if they're simple int-indices convert to paths now
-        # paths = [flist[elem] for elem in items if type(elem) == int]
-
+    def itr_plot(self, items, **kwargs):
+        '''
+        a lazy plotter to save aux space?...doubtful
+        should be used as THE interface to _plot
+        '''
         paths = []
         for i in items:
-
-            # int-index : get the path we have stored
-            if isinstance(i,int):
-        #TODO: create a get index from path method...?
-                paths.append(self.flist[i])
-
-            # path string : add it if we don't have it
-            elif isinstance(i, str):
-                self.add(i)
+            # path string, add it if we don't have it
+            if isinstance(i, str) and i not in self:
+                self.add_path(i)
                 paths.append(i)
+            elif isinstance(i, int):
+                paths.append(self._get_key(i)) # delegate to oid (is this stupid?)
 
-            # some other nested sequence full of int shit?
-            else:
-                paths.extend([self.flist[e] for e in i])
+        # plot the paths
+        return (axis for axis, lines in self._plot(paths, **kwargs))
+            # yield axis
 
-        # paths = [self.flist[elem] for elem in items if type(elem) == int]
-
-        # if len(paths) == 0:
-        # # (i.e. if not ints)
-        #     paths = items
-
-            indices = [] # not used here...?
-
-            # add the paths to our db
-            # for i in self.add(paths):
-            #     indices.append(i)
-
-        # plot the paths...
-        for axis, lines in self._plot(paths):
-            yield axis
-
-    # plot generator - uses 'makes sense' figure / axes settings
     def _plot(self, keys_itr, start_time=0, samefig=True, title=None):
-        axes = {}
-        if not isinstance(keys_itr, list):
-            keys = [i for i in keys_itr]
-        else:
+        '''
+        plot generator - uses 'makes sense' figure / axes settings
+        inputs: keys_itr -> must be an iterator over path names in self.keys()
+        '''
+        if isinstance(keys_itr, list):
             keys = keys_itr
+        else:
+            keys = [i for i in keys_itr]
 
         # create a new figure and format
         if not samefig or not self.fig:
@@ -303,33 +240,27 @@ class SigSet(object):
             self.fig.clf()
 
         # set window to half screen size if only one signal
-        if len(keys) < 2:
-            h = self.h/2
-        else:
-            h = self.h
+        if len(keys) < 2: h = self.h/2
+        else: h = self.h
         try:
-            #pass
             self.mng.resize(self.w, h)
-        except:
-            raise Exception("unable to resize window!?")
-
+        except: raise Exception("unable to resize window!?")
         # self.fig.set_size_inches(10,2)
         # self.fig.tight_layout()
 
+        # title settings
+        font_style = {'size' : 'small'}
+
         for icount, key in enumerate(keys):
 
-            # t = np.arange(start_time, len(self.vector(key)) / self.fs, 1/self.fs)
             # set up a time vector
-            t = np.linspace(start_time, len(self[key]) / self.fs, num=len(self[key]))
-            # print("size of t is ", len(t))
-
+            slen = len(self[key])
+            t = np.linspace(start_time, slen / self.fs, num=slen)
+            # plot stuff
             ax = self.fig.add_subplot(len(keys), 1, icount + 1)
             lines = ax.plot(t, self[key], figure=self.fig)
 
-            font_style = {'size' : 'small'}
-
             if title == None:
-                # ax.set_title(os.path.basename(self.flist[self.flist.index(key)]), fontdict=font_style)
                 ax.set_title(os.path.basename(key), fontdict=font_style)
             else:
                 ax.set_title(title, fontdict=font_style)
@@ -337,15 +268,11 @@ class SigSet(object):
             ax.set_xlabel('Time (s)', fontdict=font_style)
             yield (ax, lines)
 
-    @property
-    def get_figure():
-        '''here figure is normally a singleton'''
-        return self.fig
 
     def find_wavs(self, sdir):
-        self.flist = file_scan('.*\.wav$', sdir)
-        for i, path in enumerate(self.flist):
-            self._signals[path] = None
+        # self.flist = file_scan('.*\.wav$', sdir)
+        for i, path in enumerate(file_scan('.*\.wav$', sdir)):
+            self[path] = None
         print("found", len(self.flist), "files")
 
 def vline(axis, time, label='this is a line?', colour='r'):
@@ -463,15 +390,16 @@ ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 '''
 
-try: import tempfile, wave, subprocess, os, signal, struct, threading, sys#, contextlib
+try: import tempfile, wave, signal, struct, threading, sys#, contextlib
 except ImportError as imperr : print(imperr)
 
-# globals
+# audio (linux) app cmds
+snd_utils            = OrderedDict()
+snd_utils['sox']     = ['sox','-','-d']
+snd_utils['aplay']   = ['aplay', '-vv', '--']
+snd_utils['sndfile'] = ['sndfile-play', '-']
 
-# audio app cmds
-snd_utils = {'sox': ['sox','-','-d']}
-
-# but Popen uses the alias DEVNULL anyway...?
+# but Popen uses the alias DEVNULL anyway...? (legacy...damn)
 FNULL = open(os.devnull,'w')
 
 def launch_without_console(args, strm_output=False):
@@ -507,12 +435,15 @@ def launch_without_console(args, strm_output=False):
                                 stdout=FNULL,
                                 # stderr=FNULL,
                                 startupinfo=startupinfo)
-# sound player
+
 def sound(itr, fs, bitdepth=16, start=0, stop=None,
           app = 'sox',
           autoscale=True,
           level =-18.0,        # volume in dBFS
           output=False):
+    '''
+    python sound player
+    '''
     try:
         import numpy as np
         foundNumpy = True
@@ -585,6 +516,7 @@ def sound(itr, fs, bitdepth=16, start=0, stop=None,
         p = launch_without_console(cmd, strm_output=output)
 
     except:
+        # FIXME: make this an appropriate exception
         print("\nE: Unable to launch sox.")
         print("E: Please ensure that sox is installed and on the path.")
         print("E: Try 'sox -h' to test sox installation.")
@@ -597,6 +529,7 @@ def sound(itr, fs, bitdepth=16, start=0, stop=None,
         # p.wait()
 
     except:
+        # FIXME: make this an appropriate exception
         print("E: Unable to send in-memory wave file to stdin of sox subprocess.")
         waveWrite.close()
         return None
@@ -651,6 +584,11 @@ def buffer_proc_stream(proc): #, queue):
 # Unix, Windows and old Macintosh end-of-line
 newlines = ['\n', '\r\n', '\r']
 def unbuffered(proc, stream='stdout', nbytes=1):
+    '''
+    down and dirty unbuffered byte stream generator
+    reads the explicit fd
+    (since the built-ins weren't working for me)
+    '''
     stream = getattr(proc, stream)
     read = lambda : os.read(stream.fileno(), nbytes)
     while proc.poll() is None:
@@ -677,9 +615,10 @@ def itr_iselect(itr, *indices):
     i_set = set(indices)
     return (e for (i, e) in enumerate(itr) if i in i_set)
 
+# TODO: should try out pyunit here..
 def test():
     # example how to use the lazy plotter
-    ss = SigSet()
+    ss = SigMap()
     ss.find_wavs('/home/tyler/code/python/wavs/')
     # wp.plot(0)
     return ss
@@ -687,5 +626,30 @@ def test():
 def lazy_test():
     pass
 
+def _in_ipython():
+    try:
+        __IPYTHON__
+    except NameError:
+        return False
+    else:
+        return True
+
+def ipy():
+    '''launch ipython if we can'''
+    if _in_ipython():
+        print("\nYou Devil! You're already inside the ipython shell!\n"
+              "FYI : It will also open automatically if you just run this script from the shell...")
+        pass
+    else:
+        print("\nattempting to start the ipython shell...\n")
+        try: from IPython import embed
+        except ImportError as imperr : print(imperr)
+        # this call anywhere in your program will start IPython whilst
+        # maintaining the current namespace and scope
+        return embed()
+
+# script interface
 if __name__ == '__main__':
     ss = test()
+    print("play with instance 'ss'\ne.g. ss.show...")
+    shell = ipy()
