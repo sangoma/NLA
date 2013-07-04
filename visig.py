@@ -3,13 +3,18 @@
 
 # TODO;
 # - consider moving sox coversion to be in this module so we can open
-# arbitrarly formatted audio files into numpy arrays
+#   arbitrarly formatted audio files into numpy arrays
+# - 'Signal' obj which is delegated all data unpacking and metadata
+#   maintenance
+# - animation for simple playback using a cursor on the choses axes (add
+#   mixing?)
+# - animation for rt spectrum
+# - capture sreen dimensions using pure python
 
 from imp import reload
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-import wave
 #from scipy.io import wavfile
 # from scipy import signal
 # from scipy import fftpack
@@ -41,7 +46,6 @@ class OrderedIndexedDict(OrderedDict):
         # don't give me ints bitch...(unless you're changing a value)
         if isinstance(key, int):# raise KeyError("key can not be of type integer")
             key = self._get_key(key)
-
         OrderedDict.__setitem__(self, key, value)
 
     def _get_key(self, key):
@@ -78,16 +82,19 @@ class SigSet(object):
         if args:
             for i in args:
                 self._sig[i] = None
+        # stateful objs
+        self._lines      = []
+        self.fig         = None
+        self._cur_ax     = None
+        self._cur_sample = 0
 
-        self._lines = []
-        self.fig = None
-
-        # FIXME: make scr_dim impl more pythonic! like now...
+        # FIXME: make scr_dim impl more pythonic!
         self.w, self.h = scr_dim()
         # get the garbarge truck rolling...
         gc.enable()
 
     def __getattr__(self, attr):
+        # FIXME: is this superfluous?
         '''delegate as much as possible to the oid'''
         return getattr(self._signals, attr)
 
@@ -166,11 +173,23 @@ class SigSet(object):
         gc.collect()
 
     def fullscreen(self):
+        '''convenience func to fullscreen if using a mpl gui fe'''
         if self.mng:
             self.mng.full_screen_toggle()
         else:
             print("no figure handle exists?")
 
+    def _init_animate(self, axis):
+    # return a baseline axes/lines set?
+        return self._cur_ax.get_lines()
+        # line = vline(axis, time, colour=green)
+
+    def _animate(self, iframe):
+    # func which does the anim sequentially
+        pass
+
+    def get_animation(self):
+        pass
 
     def add(self, p):
         '''Add a wave file path to the SigPack'''
@@ -184,11 +203,12 @@ class SigSet(object):
         #     print("path = ", p)
         if os.path.exists(p):
             # filename, extension = os.path.splitext(p)
-            if p not in self._signals.keys():
+            if p not in self:#._signals.keys():
                 # print("adding file to signal set :\n",p,"\n")
-                self.flist.append(p)
+                # self.flist.append(p)
                 # self._signals[self.flist.index(p)] = None
-                self._signals[p] = None
+                # self._signals[p] = None
+                selfs[p] = None
             else:
                 print(os.path.basename(p), "is already in our path db -> see grapher.SigPack.show")
         else:
@@ -334,7 +354,7 @@ def vline(axis, time, label='this is a line?', colour='r'):
     mx = max(axis.get_ylim())
 
     # add a vertical line
-    axis.axvline(x=time, color=colour)
+    line = axis.axvline(x=time, color=colour)
     # add a label to the line
     axis.annotate(label,
                   xy=(time, mx),
@@ -398,6 +418,7 @@ def file_scan(re_literal, search_dir, method='find'):
     else:
         print("no other logs scanning method currentlyl exists!")
 
+import wave
 def wav_2_np(f):
     ''' use the wave module to make a np array'''
     wf = wave.open(f, 'r')
@@ -422,7 +443,7 @@ def scr_dim():
     dims = bres.decode().strip('\n').split('x')  # left associative
     return tuple([int(i.strip()) for i in dims if i != ''])
 
-# sound4python module ----v
+# sound4python module
 '''
 Copyright (C) 2013 dave.crist@gmail.com
 edited and extended by tgoodlet@gmail.com
@@ -474,7 +495,7 @@ def launch_without_console(args, strm_output=False):
                          startupinfo=startupinfo)
 
         # create a thread to handle app stream parsing
-        t = threading.Thread( target=run, kwargs={'proc': p} ) #, q))
+        t = threading.Thread( target=buffer_proc_stream, kwargs={'proc': p} ) #, q))
         t.daemon = True  # thread dies with program
         t.start()
         # state.join()
@@ -594,7 +615,7 @@ def sound(itr, fs, bitdepth=16, start=0, stop=None,
 #     for line in sys.stdout.readline():
 #         print line
 
-def run(proc): #, queue):
+def buffer_proc_stream(proc): #, queue):
     # Poll process for new output until finished
     for b in unbuffered(proc, stream='stderr'):
         # print("next line...\n")
