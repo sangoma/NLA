@@ -1,25 +1,45 @@
 #!/usr/bin/env python3
-# plot and annotate lpcm wave files easily
+'''
+Visig   - visualize and annotate signals using mpl
+
+author  : Tyler Goodlet
+email   : tgoodlet@gmail.com
+website : http://tgoodlet.github.com
+license : BSD
+Please feel free to use and modify this, but keep the above information.
+'''
 
 # TODO;
-# - consider moving sox coversion to be in this module so we can open
-#   arbitrarly formatted audio files into numpy arrays
-# - 'Signal' obj which is delegated all data unpacking and metadata
-#   maintenance
-# - animation for simple playback using a cursor on the choses axes (add mixing?)
+# - consider using sox conversion in this module so we can open
+#   arbitrarly formatted audio files as numpy arrays
+# - 'Signal' class which is delegated all data unpacking and metadata maintenance
+# - animation for simple playback using a cursor on the chosen axes (add mixing?)
 # - animation for rt spectrum
+# - mechanism to animate arbitrary metric computations in rt
 # - capture sreen dimensions using pure python
 
 # required libs
 from imp import reload
 import numpy as np
-import matplotlib.pyplot as plt
+
+# mpl
+# import matplotlib
+# matplotlib.use('Qt4Agg')
+# from matplotlib.figure import Figure
+# from matplotlib.backends.backend_qt4 import FigureManagerQT as FigureCanvas
+# from matplotlib.backends.backend_qt4 import new_figure_manager_given_figure
+from matplotlib.backends import pylab_setup
+_backend_mod, new_figure_manager, draw_if_interactive, _show = pylab_setup()
+
 import matplotlib.animation as animation
+# import matplotlib.pyplot as plt
+# from matplotlib import pylab
+
 #from scipy.io import wavfile
 # from scipy import signal
 # from scipy import fftpack
 import subprocess, os, gc
-from collections import OrderedDict
+from collections import OrderedDict, deque
 
 # like it sounds : an ordered, int subscriptable dict
 class OrderedIndexedDict(OrderedDict):
@@ -74,8 +94,9 @@ class SigMap(object):
     '''
     Wraps an ordered map of signals for easy data/vector mgmt, playback and visualization
     The mpl figure is managed as a singleton and subplots are used whenever viewing multiple signals
-    The main intent is to avoid needless figure clutter and lines of boilerplate code
-    Feel free to use this class interactively (IPython) as well as programatically
+    The main intent is to avoid needless figure clutter and boilerplate lines found in sig proc scripts
+
+    Use this class interactively (IPython) as well as programatically
     '''
     def __init__(self, *args):
         self._signals = OrderedIndexedDict() # what's underneath...
@@ -83,11 +104,28 @@ class SigMap(object):
         if args:
             for i in args:
                 self._sig[i] = None
+
         # stateful objs
-        self._lines      = []
-        self.fig         = None
-        self._cur_ax     = None
+        # self._lines   = []
+        self._fig     = None
+        self._mng     = None
+        self._cur_sig = None
+        # self.mpl = matplotlib
+
+        # to be updated by external thread
         self._cur_sample = 0
+        self._curr_sig   = None
+
+        # animation state
+        self._provision_anim = lambda : None
+        self._anim_func      = None
+        self._frames_gen     = None
+        self._anim_fargs     = None
+        self._animations     = deque()
+        self._time_elapsed   = 0
+
+        # animation settings
+        self._fps = 5
 
         # FIXME: make scr_dim impl more pythonic!
         self.w, self.h = scr_dim()
@@ -104,19 +142,22 @@ class SigMap(object):
 
     def __getitem__(self, key):
         '''lazy loading of signals and delegation to the oid'''
-        # path exists in our set?
-        if isinstance(self._signals[key], np.ndarray):
-            pass
+        # path exists in our set
+        if isinstance(self._signals[key], np.ndarray): pass
         # path exists but signal not yet loaded
-        else:
-            self._load_sig(key)
+        else: self._load_sig(key)
         return self._signals[key]
 
+    def __del__(self):
+        self.kill_mpl()
+        self.free_cache()
+
+    # TODO: move to Signal class
     def _load_sig(self, path):
         if isinstance(path, int):
             path = self._signals._get_key(path)
         if path in self._signals:
-            #TODO: loading should be completed by Signal class (i.e. signal specific)
+            #TODO: loading should be completed by 'Signal' class (i.e. format specific)
             try:
                 print("loading wave file : ",os.path.basename(path))
                 # read audio data and params
@@ -132,59 +173,132 @@ class SigMap(object):
                 raise Exception("Failed to load wave file!\nEnsure that the wave file exists and is in LPCM format")
         else: raise KeyError("no entry in the signal set for key '"+str(path)+"'")
 
+    def _sig2axis(self, sig=None):
+        '''return rendered axis corresponding to a the requested signal'''
+        #FIXME: in Signal class we should assign the axes
+        # on which a signal is drawn to avoid this hack
+        if sig:
+            try:
+                for ax in self.figure.get_axes():
+                    for line in ax.get_ydata():
+                        if sig is not data: continue
+            except ValueError:      # no easy way to compare vectors?
+                return ax
+        else:
+            return self._sig2axis(self._curr_sig)
 
     def _prettify(self):
+        '''pretty the figure in sensible ways'''
         # tighten up the margins
-        self.fig.tight_layout(pad=1.03)
+        self._fig.tight_layout(pad=1.03)
 
-    def _init_animate(self, axis):
-    # return a baseline axes/lines set?
-        return self._cur_ax.get_lines()
+    def _init_anim(self):
+        # return a baseline axes/lines set
+        self._provision_anim()
+        ax = self.sig2axis(self._curr_sig)
+        # return the artists which won't change during animation (blitting)
+        return ax.get_lines()
         # line = vline(axis, time, colour=green)
 
-    def _animate(self, iframe):
-    # func which does the anim sequentially
+    def _do_fanim(self):
+        '''run the func animation once and add it to the container of active animations'''
+        if self._anim_func:
+            anim = animation.FuncAnimation(self.figure,
+                                           self._anim_func,
+                                           frames=self._frames_gen,
+                                           init_func=self._init_anim,
+                                           fargs=self._anim_fargs,
+                                           interval=1//self._fps*1000,
+                                           repeat=False)
+            self._animations.appendleft(anim)
+        else: raise RuntimeError("no animation function has been set!")
+
+    def _move_cursor(self, iframe, *fargs):
+        '''perform animation step using the frame number and fargs'''
+        # curr axis should be the first arg
+        axis = fargs[0]
+        # self.anim = animation.FuncAnimation(self._fig
         pass
 
     def get_animation(self):
         pass
 
-    # convenience props
-    figure = property(lambda self: self.fig)
-    flist  = property(lambda self: [f for f in self.keys()])
+    def sound(self, key, **kwargs):
+        '''JUST play sound'''
+        sig = self[key]
+        sound4python(sig, sig.fs, **kwargs)
 
-    @property
-    def show(self):
+    def play(self, key):
+        '''play sound + do mpl animation with a playback cursor'''
+        sig = self[key]
+
+
+
+        # provision the animation
+        self._frames_gen = self._audio_sample_gen
+
+        self._do_fanim()
+
+    def _audio_sample_gen(self):
+        '''generate the audio sample to place a cursor on each
+        animation frame'''
+        frame_step = self.fs / self._fps    # samples/frame
+        self._cur_sample = 0                # this can be locked out
+        while self._cur_sample < len(self._curr_sig):
+            yield self._cur_sample
+            self._cur_sample += frame_step
+
+    def _cursor_playback(self, sig_key):
+        # indicate signal for playback + a visual cursor along axis
+        # if the signal is not present in the current subplot set
+        # then replot with only that signal 
+        pass
+
+    # convenience props
+    figure = property(lambda self: self._fig)
+    mng    = property(lambda self: self._mng)
+    flist  = property(lambda self: [f for f in self.keys()])
+    def get(self, key):
+        self.__getitem__(key)
+
+    def _show_corpus(self):
+
         '''pretty print the internal path list'''
         try:
             print_table(map(os.path.basename, self._signals.keys()))
         except:
             raise ValueError("no signal entries exist yet!?...add some first")
 
-    def close_all_figs(self):
-        plt.close('all')
-        self.fig = None
+    # so we don't have to type parentheses
+    show_corpus = property(lambda self : self._show_corpus())
 
-    def close_fig(self):
-        plt.close(self.fig)
-        self.fig = None
+    def kill_mpl(self):
+        # plt.close('all')
+        self._mng.destroy()
+        self._fig = None
 
-    def free_cache(self):
+    def close(self):
+        if self._fig:
+            # plt.close(self._fig)
+            self._fig.close()
+            self._fig = None #FIXME: is this necessary?
+
+    def clear(self):
         #TODO: make this actually release memory instead of just being a bitch!
         self._signals.clear()
         gc.collect()
 
     def fullscreen(self):
         '''convenience func to fullscreen if using a mpl gui fe'''
-        if self.mng:
-            self.mng.full_screen_toggle()
+        if self._mng:
+            self._mng.full_screen_toggle()
         else:
             print("no figure handle exists?")
 
     def add_path(self, p):
         '''
         Add a wave file path to the SigPack
-        Can take a single path or a sequence of paths as input
+        Can take a single path string or a sequence of as input
         '''
         if os.path.exists(p):
             # filename, extension = os.path.splitext(p)
@@ -195,19 +309,20 @@ class SigMap(object):
         else:
             raise ValueError("path string not valid?!")
 
-    def plot(self, *args):
+    def plot(self, *args, **kwargs):
         '''
         can take inputs of ints, ranges, paths, or...?
         meant to be used as an interactive interface...
         '''
-        axes = [axis for axis in self.itr_plot(args)]
+        axes = [axis for axis,lines in self.itr_plot(args, **kwargs)]
         self._prettify()
+        # self.figure.show() #-> only works when using pyplot
         return axes
 
     def itr_plot(self, items, **kwargs):
         '''
         a lazy plotter to save aux space?...doubtful
-        should be used as THE interface to _plot
+        should be used as the programatic interface to _plot
         '''
         paths = []
         for i in items:
@@ -218,11 +333,12 @@ class SigMap(object):
             elif isinstance(i, int):
                 paths.append(self._get_key(i)) # delegate to oid (is this stupid?)
 
-        # plot the paths
-        return (axis for axis, lines in self._plot(paths, **kwargs))
-            # yield axis
+        # plot the paths (composed generator)
+        # return (axis,lines for axis,lines in self._plot(paths, **kwargs))
+        for axis,lines in self._plot(paths, **kwargs):
+            yield axis, lines
 
-    def _plot(self, keys_itr, start_time=0, samefig=True, title=None):
+    def _plot(self, keys_itr, start_time=0, time_on_x=True, singlefig=True, title=None):
         '''
         plot generator - uses 'makes sense' figure / axes settings
         inputs: keys_itr -> must be an iterator over path names in self.keys()
@@ -233,66 +349,136 @@ class SigMap(object):
             keys = [i for i in keys_itr]
 
         # create a new figure and format
-        if not samefig or not self.fig:
-            self.fig = plt.figure()
-            self.mng = plt.get_current_fig_manager()
+        if not singlefig or not (self._fig and self._mng):
+
+            self._mng = new_figure_manager(1)
+
+            self._mng.set_window_title('visig')
+            self._fig = self._mng.canvas.figure
+
+
+            # pylab and pyplot seem to be causing mem headaches?
+            # self._fig = pylab.figure()
+            # self._mng = pylab.get_current_fig_manager()
+
+            # self.fig = plt.figure()
+            # self._mng = plt.get_current_fig_manager()
+
+            # self._fig = Figure()
+            # self._canvas = FigureCanvas(self._fig)
+            # self._mng = new_figure_manager(1, self._fig)
+            # self._mng = new_figure_manager_given_figure(1, self._fig)
+
         else:
-            self.fig.clf()
+            for axis in self.figure.get_axes():
+                axis.clear()
+                gc.collect()
+                # for line in axis.get_lines():
+                    # line.clear()
+                    # gc.collect()
+
+            self.figure.clear()
+            gc.collect()
+
+        # draw fig
+        draw_if_interactive()
 
         # set window to half screen size if only one signal
         if len(keys) < 2: h = self.h/2
         else: h = self.h
-        try:
-            self.mng.resize(self.w, h)
-        except: raise Exception("unable to resize window!?")
-        # self.fig.set_size_inches(10,2)
-        # self.fig.tight_layout()
+        # try:
+        self._mng.resize(self.w, h)
+        # except: raise Exception("unable to resize window!?")
+        # self._fig.set_size_inches(10,2)
+        # self._fig.tight_layout()
 
         # title settings
         font_style = {'size' : 'small'}
 
+        # main plot loop
         for icount, key in enumerate(keys):
+            # always set 'curr_sig' to last plotted
+            sig = self._curr_sig = self[key]
+            slen  = len(sig)
 
-            # set up a time vector
-            slen = len(self[key])
-            t = np.linspace(start_time, slen / self.fs, num=slen)
-            # plot stuff
-            ax = self.fig.add_subplot(len(keys), 1, icount + 1)
-            lines = ax.plot(t, self[key], figure=self.fig)
-
-            if title == None:
-                ax.set_title(os.path.basename(key), fontdict=font_style)
-            else:
-                ax.set_title(title, fontdict=font_style)
-
+            # set up a time vector and plot
+            t     = np.linspace(start_time, slen / self.fs, num=slen)
+            ax    = self._fig.add_subplot(len(keys), 1, icount + 1)
+            lines = ax.plot(t, sig, figure=self._fig)
             ax.set_xlabel('Time (s)', fontdict=font_style)
+
+            if title == None: title = os.path.basename(key)
+            ax.set_title(title, fontdict=font_style)
+
+            # ax.figure.canvas.draw()
+
             yield (ax, lines)
 
-
     def find_wavs(self, sdir):
+        '''find all wav files in a dir'''
         # self.flist = file_scan('.*\.wav$', sdir)
         for i, path in enumerate(file_scan('.*\.wav$', sdir)):
             self[path] = None
         print("found", len(self.flist), "files")
 
-def vline(axis, time, label='this is a line?', colour='r'):
 
+class Signal(object):
+    '''base class for loading arbitray data files into np arrays'''
+
+    def __init__(self, file_path):
+        self._fs = None
+        self._signal = None
+        self._detect_fmt(file_path)
+        pass
+
+    def __getattr__(self):
+        return getattr(self._signal, attr)
+
+    def _detect_fmt(selft):
+        raise NotImplementedError('Needs to be implemented by subclasses to'
+                                  ' actually detect file format.')
+
+    def _load_sig(self):
+        raise NotImplementedError('Needs to be implemented by subclasses to'
+                                  ' actually load a signal.')
+
+import wave
+def wav_2_np(f):
+    ''' use the wave module to make a np array'''
+    wf = wave.open(f, 'r')
+    fs = wf.getframerate()
+
+    # bit depth calc
+    bd = wf.getsampwidth() * 8
+    frames = wf.readframes(wf.getnframes())
+
+    # hack to read data using array protocol type string
+    dt = np.dtype('i' + str(wf.getsampwidth()))
+    sig = np.fromstring(frames, dtype=dt)
+    wf.close()
+    return (sig, fs, bd)
+
+def cursor(axis, time, colour='r'):
+    '''add a vertical line @ time (...looks like a cursor)
+    here the x axis should be a time vector
+    such as created in SigMap._plot'''
+    return axis.axvline(x=time, color=colour)
+    return line
+
+def label_ymax(axis, label):
+    '''add an optional label to the line @ ymax'''
     # use ylim for annotation placement
     mx = max(axis.get_ylim())
-
-    # add a vertical line
-    line = axis.axvline(x=time, color=colour)
-    # add a label to the line
-    axis.annotate(label,
+    ret = axis.annotate(label,
                   xy=(time, mx),
                   xycoords='data',
                   xytext=(3, -10),
                   textcoords='offset points')
                   # arrowprops=dict(facecolor='black', shrink=0.05),
                   # horizontalalignment='right', verticalalignment='bottom')
-    return axis
+    return ret
 
-def line_max_y(axis):
+def lines_max_y(axis):
     # use max value from the available lines for annotation placement
     lines = axis.get_lines()
     mx = 0
@@ -303,7 +489,7 @@ def line_max_y(axis):
     return mx
 
 def print_table(itr, field_header=['signal files'], delim='|'):
-
+    '''pretty print iterable in a column'''
     itr = [i for i in itr]
     max_width = max(len(field) for field in itr)
     widths = iter(lambda:max_width, 1) # an infinite width generator
@@ -345,22 +531,6 @@ def file_scan(re_literal, search_dir, method='find'):
     else:
         print("no other logs scanning method currentlyl exists!")
 
-import wave
-def wav_2_np(f):
-    ''' use the wave module to make a np array'''
-    wf = wave.open(f, 'r')
-    fs = wf.getframerate()
-
-    # bit depth calc
-    bd = wf.getsampwidth() * 8
-    frames = wf.readframes(wf.getnframes())
-
-    # hack to read data using array protocol type string
-    dt = np.dtype('i' + str(wf.getsampwidth()))
-    sig = np.fromstring(frames, dtype=dt)
-    wf.close()
-    return (sig, fs, bd)
-
 def scr_dim():
     #TODO: find a more elegant way of doing this...say using
     # figure.get_size_inches()
@@ -370,7 +540,8 @@ def scr_dim():
     dims = bres.decode().strip('\n').split('x')  # left associative
     return tuple([int(i.strip()) for i in dims if i != ''])
 
-# sound4python module
+
+# from the sound4python module
 '''
 Copyright (C) 2013 dave.crist@gmail.com
 edited and extended by tgoodlet@gmail.com
@@ -394,6 +565,7 @@ try: import tempfile, wave, signal, struct, threading, sys#, contextlib
 except ImportError as imperr : print(imperr)
 
 # audio (linux) app cmds
+# TODO: check for app existence in order
 snd_utils            = OrderedDict()
 snd_utils['sox']     = ['sox','-','-d']
 snd_utils['aplay']   = ['aplay', '-vv', '--']
@@ -422,7 +594,7 @@ def launch_without_console(args, strm_output=False):
                          stderr=subprocess.PIPE,
                          startupinfo=startupinfo)
 
-        # create a thread to handle app stream parsing
+        # create a thread to handle app output stream parsing
         t = threading.Thread( target=buffer_proc_stream, kwargs={'proc': p} ) #, q))
         t.daemon = True  # thread dies with program
         t.start()
@@ -436,13 +608,13 @@ def launch_without_console(args, strm_output=False):
                                 # stderr=FNULL,
                                 startupinfo=startupinfo)
 
-def sound(itr, fs, bitdepth=16, start=0, stop=None,
+def sound4python(itr, fs, bitdepth=16, start=0, stop=None,
           app = 'sox',
           autoscale=True,
           level =-18.0,        # volume in dBFS
           output=False):
     '''
-    python sound player
+    a python sound player using whatever system audio player is available
     '''
     try:
         import numpy as np
@@ -512,7 +684,7 @@ def sound(itr, fs, bitdepth=16, start=0, stop=None,
     try:
         # look up the cmdline listing
         cmd = snd_utils[app]
-        # launch the process
+        # launch the process parsing std stream out if requested
         p = launch_without_console(cmd, strm_output=output)
 
     except:
@@ -522,7 +694,6 @@ def sound(itr, fs, bitdepth=16, start=0, stop=None,
         print("E: Try 'sox -h' to test sox installation.")
         waveWrite.close()
         return None
-
     try:
         p.communicate(memFile.read())
         print(app,"communication completed...")
@@ -548,11 +719,25 @@ def sound(itr, fs, bitdepth=16, start=0, stop=None,
 #     for line in sys.stdout.readline():
 #         print line
 
-def buffer_proc_stream(proc): #, queue):
-    # Poll process for new output until finished
-    for b in unbuffered(proc, stream='stderr'):
+# app parser funcs
+def parse_sox(s):
+    pass
+
+def parse_aplay(s):
+    pass
+
+def parse_sndfile(s):
+    pass
+
+def buffer_proc_stream(proc, deque, std_stream='stderr', parser=lambda arg : arg):
+    '''Poll process for new output until finished and append to fifo
+       parser is an identity map if unassigned'''
+
+    for b in unbuffered(proc, stream=std_stream):
         # print("next line...\n")
-        print(b)
+        # output = parser(b)
+        # deque.appendleft(output)
+        deque.appendleft(parser(b))
 
     # stream = proc.stderr
     # nbytes = 1
@@ -586,7 +771,7 @@ newlines = ['\n', '\r\n', '\r']
 def unbuffered(proc, stream='stdout', nbytes=1):
     '''
     down and dirty unbuffered byte stream generator
-    reads the explicit fd
+    which reads the explicit fd
     (since the built-ins weren't working for me)
     '''
     stream = getattr(proc, stream)
@@ -615,17 +800,6 @@ def itr_iselect(itr, *indices):
     i_set = set(indices)
     return (e for (i, e) in enumerate(itr) if i in i_set)
 
-# TODO: should try out pyunit here..
-def test():
-    # example how to use the lazy plotter
-    ss = SigMap()
-    ss.find_wavs('/home/tyler/code/python/wavs/')
-    # wp.plot(0)
-    return ss
-
-def lazy_test():
-    pass
-
 def _in_ipython():
     try:
         __IPYTHON__
@@ -635,21 +809,26 @@ def _in_ipython():
         return True
 
 def ipy():
-    '''launch ipython if we can'''
+    '''if possible, launch ipython'''
     if _in_ipython():
-        print("\nYou Devil! You're already inside the ipython shell!\n"
-              "FYI : It will also open automatically if you just run this script from the shell...")
         pass
     else:
         print("\nattempting to start the ipython shell...\n")
         try: from IPython import embed
         except ImportError as imperr : print(imperr)
-        # this call anywhere in your program will start IPython whilst
-        # maintaining the current namespace and scope
+        # start IPython whilst maintaining the current namespace and scope
         return embed()
+
+# TODO: should try out pyunit here..
+def test():
+    # example how to use the lazy plotter
+    ss = SigMap()
+    ss.find_wavs('/home/tyler/code/python/wavs/')
+    # wp.plot(0)
+    return ss
 
 # script interface
 if __name__ == '__main__':
     ss = test()
-    print("play with instance 'ss'\ne.g. ss.show...")
+    print("play with instance 'ss'\ne.g. ss.show_corpus...")
     shell = ipy()
