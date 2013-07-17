@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 '''
-Visig   - visualize and annotate signals using mpl
+Visig   - visualize and animate signals using mpl
 
 author  : Tyler Goodlet
 email   : tgoodlet@gmail.com
@@ -17,6 +17,8 @@ Please feel free to use and modify this, but keep the above information.
 # - animation for rt spectrum
 # - mechanism to animate arbitrary metric computations in rt
 # - capture sreen dimensions using pure python
+# - create a callback mechnism which interfaces like a rt algo block and
+#   allows for metric animations used for algo development
 
 # required libs
 from imp import reload
@@ -43,7 +45,6 @@ from collections import OrderedDict, deque
 
 # like it sounds : an ordered, int subscriptable dict
 class OrderedIndexedDict(OrderedDict):
-
     def __getitem__(self, key):
         #FIXME: how to handle slices?
         #(it's weird since we always have to check first and using the list...)
@@ -111,18 +112,17 @@ class SigMap(object):
         self._mng      = None
         self._cur_sig  = None
         self._axes_set = set()
-        # self.mpl     = matplotlib
 
         # to be updated by external thread
         self._cur_sample = 0
-        self._curr_sig   = None
+        self._cur_sig   = None
 
         # animation state
         self._provision_anim = lambda : None
         self._anim_func      = None
         self._frames_gen     = None
         self._anim_fargs     = None
-        self._animations     = deque()
+        self._anim_sig_set   = set()
         self._time_elapsed   = 0
 
         # animation settings
@@ -133,10 +133,13 @@ class SigMap(object):
         # get the garbarge truck rolling...
         gc.enable()
 
+    # FIXME: is this superfluous?
     # delegate as much as possible to the oid
     def __getattr__(self, attr):
-        # FIXME: is this superfluous?
-        return getattr(self._signals, attr)
+        try:
+            return self.__dict__[attr]
+        except KeyError:
+            return getattr(self._signals, attr)
 
     def __setitem__(self, *args):
         return self._signals.__setitem__(*args)
@@ -174,19 +177,24 @@ class SigMap(object):
                 raise Exception("Failed to load wave file!\nEnsure that the wave file exists and is in LPCM format")
         else: raise KeyError("no entry in the signal set for key '"+str(path)+"'")
 
-    def _sig2axis(self, sig=None):
+    def _sig2axis(self, sig_key=None):
         '''return rendered axis corresponding to a the requested signal'''
         #FIXME: in Signal class we should assign the axes
-        # on which a signal is drawn to avoid this hack
-        if sig:
-            try:
-                for ax in self.figure.get_axes():
-                    for line in ax.get_ydata():
-                        if sig is not data: continue
-            except ValueError:      # no easy way to compare vectors?
-                return ax
-        else:
-            return self._sig2axis(self._curr_sig)
+        # on which a signal is drawn to avoid this hack?
+        if not sig_key: sig_key = self._cur_sig
+        sig = self[sig_key]
+        try:
+            for ax in self.figure.get_axes():
+                for line in ax.get_lines():
+                    if sig in line.get_ydata():# continue
+                        return ax
+                    else:
+                        return None
+        except ValueError:      # no easy way to compare vectors?
+            return None
+            # return ax
+        # else:
+        #     return self._sig2axis(self._cur_sig)
 
     def _prettify(self):
         '''pretty the figure in sensible ways'''
@@ -194,15 +202,25 @@ class SigMap(object):
         self._fig.tight_layout(pad=1.03)
 
     def _init_anim(self):
-        # return a baseline axes/lines set
-        self._provision_anim()
-        ax = self.sig2axis(self._curr_sig)
+        '''
+        in general we provision as follows:
+        1) check if the 'current signal(s)' (_cur_signal) is shown on a figure axis
+        2) if not (re-)plot them
+        3) return the basline artists which won't change after plotting (usually time and amplitude)
+        '''
+        # axes = [self._sig2axis(key) for key in self._anim_sig_set]
+        ax = self._sig2axis(self._cur_sig)
+        if not ax:
+            ax = self.plot(self._cur_sig)
+        #4) do addional steps using self._provision_anim
+        # self._provision_anim()
         # return the artists which won't change during animation (blitting)
         return ax.get_lines()
         # line = vline(axis, time, colour=green)
 
     def _do_fanim(self):
-        '''run the func animation once and add it to the container of active animations'''
+        '''run the function based animation once
+        this blocks until the the animation is complete when using an interactive fe'''
         if self._anim_func:
             anim = animation.FuncAnimation(self.figure,
                                            self._anim_func,
@@ -211,18 +229,9 @@ class SigMap(object):
                                            fargs=self._anim_fargs,
                                            interval=1//self._fps*1000,
                                            repeat=False)
-            self._animations.appendleft(anim)
+
+            # self._animations.appendleft(anim)
         else: raise RuntimeError("no animation function has been set!")
-
-    def _move_cursor(self, iframe, *fargs):
-        '''perform animation step using the frame number and fargs'''
-        # curr axis should be the first arg
-        axis = fargs[0]
-        # self.anim = animation.FuncAnimation(self._fig
-        pass
-
-    def get_animation(self):
-        pass
 
     def sound(self, key, **kwargs):
         '''JUST play sound'''
@@ -231,27 +240,51 @@ class SigMap(object):
 
     def play(self, key):
         '''play sound + do mpl animation with a playback cursor'''
-        sig = self[key]
+        # sig = self[key]
+        self._cur_sig = key
+        ax = self._sig2axis(key)
+        self._anim_fargs = cursor(ax, 0)
+        # set animator routine
+        self._anim_func = self._set_cursor
+        # set the frame iterator
+        self._frames_gen = self._audio_time_gen
 
-        # provision the animation
-        self._frames_gen = self._audio_sample_gen
-
+        # t = threading.Thread( target=buffer_proc_stream, kwargs={'proc': p, 'callback': callback} ) #, q))
+        # t.daemon = True  # thread dies with program
+        # t.start()
         self._do_fanim()
 
-    def _audio_sample_gen(self):
-        '''generate the audio sample to place a cursor on each
-        animation frame'''
-        frame_step = self.fs / self._fps    # samples/frame
-        self._cur_sample = 0                # this can be locked out
-        while self._cur_sample < len(self._curr_sig):
-            yield self._cur_sample
-            self._cur_sample += frame_step
+    def _set_cursor(self, sample_time, *fargs):
+        '''
+        perform animation step using the frame number and cursor line
+        cursor artist must be first element in *fargs
+        '''
+# TODO? place a lock here?
+        cursor_line = fargs[0]
+        cursor_line.set_data(float(sample_time), [0,1])
+        return cursor_line
+
+    def _audio_time_gen(self):
+        '''generate the audio sample-time for cursor placement
+        on each animation frame'''
+        # frame_step = self.fs / self._fps    # samples/frame
+        time_step = 1/self._fps
+        self._audio_time = 0                # this can be locked out
+                                        # FIXME: get rid of this hack job!
+        while self._audio_time <= len(self[self._cur_sig]/self.fs):
+            yield self._audio_time
+            self._audio_time += time_step
 
     def _cursor_playback(self, sig_key):
         # indicate signal for playback + a visual cursor along axis
         # if the signal is not present in the current subplot set
-        # then replot with only that signal 
+        # then replot with only that signal
         pass
+
+    def _show_corpus(self):
+        '''pretty print the internal path list'''
+        try: print_table(map(os.path.basename, self._signals.keys()))
+        except: raise ValueError("no signal entries exist yet!?...add some first")
 
     # convenience attrs
     figure      = property(lambda self: self._fig)
@@ -260,16 +293,9 @@ class SigMap(object):
     show_corpus = property(lambda self : self._show_corpus())
     def get(self, key): self.__getitem__(key)
 
-    def _show_corpus(self):
-        '''pretty print the internal path list'''
-        try:
-            print_table(map(os.path.basename, self._signals.keys()))
-        except:
-            raise ValueError("no signal entries exist yet!?...add some first")
-
     def kill_mpl(self):
         # plt.close('all')
-        self._mng.destroy()
+        self.mng.destroy()
         self._fig = None
 
     def close(self):
@@ -292,8 +318,8 @@ class SigMap(object):
 
     def add_path(self, p):
         '''
-        Add a wave file path to the SigPack
-        Can take a single path string or a sequence of as input
+        Add a data file path to the SigMap
+        Can take a single path string or a sequence as input
         '''
         if os.path.exists(p):
             # filename, extension = os.path.splitext(p)
@@ -306,9 +332,9 @@ class SigMap(object):
 
     def plot(self, *args, **kwargs):
         '''
-        can take inputs of ints, ranges, paths, or...?
+        can take inputs of ints, ranges or paths
         meant to be used as an interactive interface...
-        returns a list of axes or a single axis
+        returns a either a list of axes or a single axis
         '''
         axes = [axis for axis,lines in self.itr_plot(args, **kwargs)]
         self._prettify()
@@ -402,14 +428,14 @@ class SigMap(object):
         # main plot loop
         for icount, key in enumerate(keys):
             # always set 'curr_sig' to last plotted
-            sig = self._curr_sig = self[key]
+            sig = self._cur_sig = self[key]
             slen  = len(sig)
 
             # set up a time vector and plot
             t     = np.linspace(start_time, slen / self.fs, num=slen)
             ax    = self._fig.add_subplot(len(keys), 1, icount + 1)
             # maintain a set of current signals present on the active axes
-            self._axes_set.add(sig)
+            # self._axes_set.add(sig)
             lines = ax.plot(t, sig, figure=self._fig)
             ax.set_xlabel('Time (s)', fontdict=font_style)
 
@@ -417,7 +443,6 @@ class SigMap(object):
             ax.set_title(title, fontdict=font_style)
 
             # ax.figure.canvas.draw()
-
             yield (ax, lines)
 
     def find_wavs(self, sdir):
@@ -425,8 +450,16 @@ class SigMap(object):
         # self.flist = file_scan('.*\.wav$', sdir)
         for i, path in enumerate(file_scan('.*\.wav$', sdir)):
             self[path] = None
+            print("found file : ",path)
         print("found", len(self.flist), "files")
 
+    # example callback
+    def print_cb(self, *fargs):
+        for i in fargs:
+            print(i)
+
+    def register_callback(self):
+        pass
 
 class Signal(object):
     '''
@@ -439,6 +472,9 @@ class Signal(object):
         self._fs = None
         self._signal = None
         self._detect_fmt(file_path)
+        pass
+
+    def _load_sig(self, path):
         pass
 
     def __getattr__(self):
@@ -471,9 +507,9 @@ def wav_2_np(f):
 def cursor(axis, time, colour='r'):
     '''add a vertical line @ time (...looks like a cursor)
     here the x axis should be a time vector
-    such as created in SigMap._plot'''
+    such as created in SigMap._plot
+    the returned line 'l' can be set with l.set_data([xmin, xmax], [ymin, ymax])'''
     return axis.axvline(x=time, color=colour)
-    return line
 
 def label_ymax(axis, label):
     '''add an optional label to the line @ ymax'''
@@ -574,13 +610,7 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEAL
 try: import tempfile, wave, signal, struct, threading, sys#, contextlib
 except ImportError as imperr : print(imperr)
 
-# audio (linux) app cmds
-# TODO: check for app existence in order
-snd_utils            = OrderedDict()
-snd_utils['sox']     = ['sox','-','-d']
-snd_utils['aplay']   = ['aplay', '-vv', '--']
-snd_utils['sndfile'] = ['sndfile-play', '-']
-
+# TODO: make the subclasses
 class SndApp(object):
     '''
     base class for sound app wrappers
@@ -588,34 +618,71 @@ class SndApp(object):
     if app is a command opt_list is it's arguments if a class then it's __init__ args
     '''
     def __init__(self, app, opt_list=None, parser=None):
-            if isinstance(app, type):
-                self.app = app.__init__(opt_list, parser)
-            elif isinstance(app, str):
-                self.app = []
-                self.app.append(app)
-                self.cmd.extend(opt_list)
+        # if we get a class
+        if isinstance(app, type):
+            self = app.__init__(opt_list, parser)
+        elif isinstance(app, str):
+            self.cmd_line = []
+            self.cmd_line.append(app)
+            self.cmd_line.extend(opt_list)
 
-            if parser: self._parser = parser
-            if py_klass: self._
+        if parser:
+            self._parser = parser
 
-    def analyze(self):
+    def analyze(self, f):
+        '''sublcass method to analyze a file'''
         raise NotImplementedError("must implement the file analysis in the child class!")
 
+# app parser funcs
+def parse_sox_cur_time(s):
+    '''
+    s : string or buffer?
+    parser funcs must take in a string or buffer and provide a string output
+    '''
+    val = s.strip('\n')
+    return val
+
+def parse_aplay(s):
+    pass
+
+def parse_sndfile(s):
+    pass
+
+# audio (linux) app cmds
+# TODO:
+# - check for app existence in order
+# - extend the SndApp class to contain method calls for generic analysis
+#   and multichannel playback (multiprocessing module?)
+# - should this class contain a parser plugin mechanism?
+
+snd_utils            = OrderedDict()
+snd_utils['sox']     = SndApp('sox', opt_list=['-','-d'], parser=parse_sox_cur_time)
+snd_utils['aplay']   = SndApp('aplay', opt_list=['-vv', '--'], parser=parse_aplay)
+snd_utils['sndfile'] = SndApp('sndfile-play', opt_list=['-'], parser=parse_sndfile)
+
+def get_snd_app():
+    '''get the first available sound app'''
+    pass
+    # for app in snd_utils:
+    #     arg0 = app.
 
 def sound4python(itr, fs, bitdepth=16, start=0, stop=None,
-          app = 'sox',
+          app_name='sox',
           autoscale=True,
           level =-18.0,
-          callback=None,
-          output=False):
+          callback=None):
     '''
     a python sound player which delegates to a system (Linux) audio player
 
     params:
-            app      : system app used for playback of type SndApp
-            level    : volume in dBFS
-            callback : will be called by the app parser and will place
-                       useful information in 'fargs'
+            itr          : input python iterable for playback
+            fs           : sample rate of data
+            start/stop   : start/stop vector indices
+            app_name     : system app of type SndApp used for playback
+                           current available options are sox, alsa play, and lib-sndfile play
+            autoscale    : indicates to enable playback at the provided 'level'
+            level        : volume in dBFS
+            callback     : will be called by the snd app with (parser) output passing in 'fargs'
     '''
 # TODO: move these imports out of here?
     try:
@@ -689,9 +756,18 @@ def sound4python(itr, fs, bitdepth=16, start=0, stop=None,
           "rate of {2:.3f} kHz)".format(1.0*len(itr)/fs, len(itr)/1000., int(fs)/1000.))
     try:
         # look up the cmdline listing
-        cmd = snd_utils[app]
-        # launch the process parsing std stream out if requested
-        p = launch_without_console(cmd, strm_output=output)
+        app = snd_utils[app_name]
+
+        # launch the process parsing std streams output if requested
+        p = launch_without_console(app.cmd_line, strm_output=True)
+
+        if callback:
+            # create a thread to handle app output stream parsing
+            # TODO: make thread a class with more flexibility
+            t = threading.Thread( target=buffer_proc_stream, kwargs={'proc': p, 'callback': callback} ) #, q))
+            t.daemon = True  # thread dies with program
+            t.start()
+            # state.join()
 
     except:
         # FIXME: make this an appropriate exception
@@ -701,6 +777,7 @@ def sound4python(itr, fs, bitdepth=16, start=0, stop=None,
         waveWrite.close()
         return None
     try:
+        # deliver data to process (normally a blocking action)
         p.communicate(memFile.read())
         print(app,"communication completed...")
         # p.wait()
@@ -718,7 +795,6 @@ FNULL = open(os.devnull,'w')
 
 def launch_without_console(args, strm_output=False):
     """Launches args windowless and waits until finished"""
-
     startupinfo = None
 
     if 'STARTUPINFO' in dir(subprocess):
@@ -728,27 +804,18 @@ def launch_without_console(args, strm_output=False):
     if strm_output:
         # create process
         p = subprocess.Popen(args,
-                         bufsize=1,
+                         # bufsize=1,
                          stdin=subprocess.PIPE,
                          stdout=subprocess.PIPE,
-                         # stderr=subprocess.PIPE,
                          stderr=subprocess.PIPE,
                          startupinfo=startupinfo)
-
-        # create a thread to handle app output stream parsing
-        t = threading.Thread( target=buffer_proc_stream, kwargs={'proc': p} ) #, q))
-        t.daemon = True  # thread dies with program
-        t.start()
-        # state.join()
         return p
-
     else:
         return subprocess.Popen(args,
                                 stdin=subprocess.PIPE,
                                 stdout=FNULL,
                                 # stderr=FNULL,
                                 startupinfo=startupinfo)
-
 
 # # threaded class to hold cursor state info
 # class SoxState(thread.
@@ -762,25 +829,17 @@ def launch_without_console(args, strm_output=False):
 #     for line in sys.stdout.readline():
 #         print line
 
-# app parser funcs
-def parse_sox(s):
-    pass
-
-def parse_aplay(s):
-    pass
-
-def parse_sndfile(s):
-    pass
-
-def buffer_proc_stream(proc, deque, std_stream='stderr', parser=lambda arg : arg):
-    '''Poll process for new output until finished and append to fifo
+def buffer_proc_stream(proc,
+                       # deque,
+                       std_stream='stderr',
+                       parser=lambda arg : arg,
+                       callback=print):
+    '''Poll process for new output until finished pass to callback
        parser is an identity map if unassigned'''
 
     for b in unbuffered(proc, stream=std_stream):
-        # print("next line...\n")
-        # output = parser(b)
-        # deque.appendleft(output)
-        deque.appendleft(parser(b))
+        # deque.appendleft(parser(b))
+        callback(parser(b))
 
     # stream = proc.stderr
     # nbytes = 1
