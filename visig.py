@@ -30,11 +30,11 @@ import numpy as np
 # from matplotlib.figure import Figure
 # from matplotlib.backends.backend_qt4 import FigureManagerQT as FigureCanvas
 # from matplotlib.backends.backend_qt4 import new_figure_manager_given_figure
-from matplotlib.backends import pylab_setup
-_backend_mod, new_figure_manager, draw_if_interactive, _show = pylab_setup()
+# from matplotlib.backends import pylab_setup
+# _backend_mod, new_figure_manager, draw_if_interactive, _show = pylab_setup()
 
-import matplotlib.animation as animation
-# import matplotlib.pyplot as plt
+from matplotlib import animation
+import matplotlib.pyplot as plt
 # from matplotlib import pylab
 
 #from scipy.io import wavfile
@@ -43,7 +43,12 @@ import matplotlib.animation as animation
 import subprocess, os, gc
 from collections import OrderedDict, deque
 
-# like it sounds : an ordered, int subscriptable dict
+# select values from an itr by index
+def itr_iselect(itr, *indices):
+    i_set = set(indices)
+    return (e for (i, e) in enumerate(itr) if i in i_set)
+
+# like it sounds : an ordered, int subscriptable dict (OID)
 class OrderedIndexedDict(OrderedDict):
     def __getitem__(self, key):
         #FIXME: how to handle slices?
@@ -91,7 +96,7 @@ class OrderedIndexedDict(OrderedDict):
         # return the key
         return curr.key
 
-class SigMap(object):
+class SigMng(object):
     '''
     Wraps an ordered map of signals for easy data/vector mgmt, playback and visualization
     The mpl figure is managed as a singleton and subplots are used whenever viewing multiple signals
@@ -124,6 +129,7 @@ class SigMap(object):
         self._anim_fargs     = None
         self._anim_sig_set   = set()
         self._time_elapsed   = 0
+        self._cursor         = None
 
         # animation settings
         self._fps = 5   # determines the resolution for animated metrics (i.e. window size)
@@ -165,23 +171,24 @@ class SigMap(object):
             try:
                 print("loading wave file : ",os.path.basename(path))
                 # read audio data and params
-                sig, self.fs, self.bd = wav_2_np(path)
-                # (self.fs, sig) = wavfile.read(self.flist[index])
+                sig, self.Fs, self.bd = wav_2_np(path)
+                # (self.Fs, sig) = wavfile.read(self.flist[index])
 
                 amax = 2**(self.bd - 1) - 1
                 sig = sig/amax
                 self._signals[path] = sig
-                print("INFO |->",len(sig),"samples =",len(sig)/self.fs,"seconds @ ",self.fs," Hz")
+                print("INFO |->",len(sig),"samples =",len(sig)/self.Fs,"seconds @ ",self.Fs," Hz")
                 return path
             except:
                 raise Exception("Failed to load wave file!\nEnsure that the wave file exists and is in LPCM format")
         else: raise KeyError("no entry in the signal set for key '"+str(path)+"'")
 
     def _sig2axis(self, sig_key=None):
-        '''return rendered axis corresponding to a the requested signal'''
+        '''return rendered axis corresponding to a signal'''
         #FIXME: in Signal class we should assign the axes
         # on which a signal is drawn to avoid this hack?
-        if not sig_key: sig_key = self._cur_sig
+        if not self._fig: return None
+        # if not sig_key: sig_key = self._cur_sig
         sig = self[sig_key]
         try:
             for ax in self.figure.get_axes():
@@ -209,43 +216,47 @@ class SigMap(object):
         3) return the basline artists which won't change after plotting (usually time and amplitude)
         '''
         # axes = [self._sig2axis(key) for key in self._anim_sig_set]
-        ax = self._sig2axis(self._cur_sig)
-        if not ax:
-            ax = self.plot(self._cur_sig)
+        # ax = self._sig2axis(self._cur_sig)
         #4) do addional steps using self._provision_anim
         # self._provision_anim()
         # return the artists which won't change during animation (blitting)
-        return ax.get_lines()
+        y = [axes.get_lines() for axes in self._fig.get_axes()]
+        print(y[0])
+        return y[0],
+        # return ax.get_lines()
         # line = vline(axis, time, colour=green)
 
     def _do_fanim(self):
         '''run the function based animation once
         this blocks until the the animation is complete when using an interactive fe'''
-        if self._anim_func:
-            anim = animation.FuncAnimation(self.figure,
-                                           self._anim_func,
-                                           frames=self._frames_gen,
-                                           init_func=self._init_anim,
-                                           fargs=self._anim_fargs,
-                                           interval=1//self._fps*1000,
-                                           repeat=False)
+        # if self._anim_func:
+        anim = animation.FuncAnimation(self._fig,
+                                       _set_cursor,
+                                       frames=6000, #self._audio_time_gen,
+                                       # init_func=self._init_anim,
+                                       interval=20,#1//self._fps*1000,
+                                       fargs=self,
+                                       blit=True)
+                                       #repeat=False)
 
             # self._animations.appendleft(anim)
-        else: raise RuntimeError("no animation function has been set!")
+        # else: raise RuntimeError("no animation function has been set!")
 
     def sound(self, key, **kwargs):
         '''JUST play sound'''
         sig = self[key]
-        sound4python(sig, sig.fs, **kwargs)
+        sound4python(sig, sig.Fs, **kwargs)
 
     def play(self, key):
         '''play sound + do mpl animation with a playback cursor'''
         # sig = self[key]
         self._cur_sig = key
         ax = self._sig2axis(key)
-        self._anim_fargs = cursor(ax, 0)
+        if not ax:
+            ax = self.plot(key)
+        self._cursor = cursor(ax, 0)
         # set animator routine
-        self._anim_func = self._set_cursor
+        # self._anim_func = self._set_cursor
         # set the frame iterator
         self._frames_gen = self._audio_time_gen
 
@@ -254,32 +265,18 @@ class SigMap(object):
         # t.start()
         self._do_fanim()
 
-    def _set_cursor(self, sample_time, *fargs):
-        '''
-        perform animation step using the frame number and cursor line
-        cursor artist must be first element in *fargs
-        '''
-# TODO? place a lock here?
-        cursor_line = fargs[0]
-        cursor_line.set_data(float(sample_time), [0,1])
-        return cursor_line
 
     def _audio_time_gen(self):
         '''generate the audio sample-time for cursor placement
         on each animation frame'''
-        # frame_step = self.fs / self._fps    # samples/frame
+        # frame_step = self.Fs / self._fps    # samples/frame
         time_step = 1/self._fps
         self._audio_time = 0                # this can be locked out
                                         # FIXME: get rid of this hack job!
-        while self._audio_time <= len(self[self._cur_sig]/self.fs):
+        total_time = len(self[self._cur_sig]/self.Fs)
+        while self._audio_time <= total_time:
             yield self._audio_time
             self._audio_time += time_step
-
-    def _cursor_playback(self, sig_key):
-        # indicate signal for playback + a visual cursor along axis
-        # if the signal is not present in the current subplot set
-        # then replot with only that signal
-        pass
 
     def _show_corpus(self):
         '''pretty print the internal path list'''
@@ -307,7 +304,7 @@ class SigMap(object):
     def clear(self):
         #FIXME: make this actually release memory instead of just being a bitch!
         self._signals.clear()
-        gc.collect()
+        # gc.collect()
 
     def fullscreen(self):
         '''convenience func to fullscreen if using a mpl gui fe'''
@@ -318,7 +315,7 @@ class SigMap(object):
 
     def add_path(self, p):
         '''
-        Add a data file path to the SigMap
+        Add a data file path to the SigMng
         Can take a single path string or a sequence as input
         '''
         if os.path.exists(p):
@@ -377,12 +374,12 @@ class SigMap(object):
             keys = [i for i in keys_itr]
 
         # create a new figure and format
-        if not singlefig or not (self._fig and self._mng):
+        if not singlefig or not (self._fig and self._mng.window):
 
             # using mpl/backends.py pylab setup (NOT pylab)
-            self._mng = new_figure_manager(1)
-            self._mng.set_window_title('visig')
-            self._fig = self._mng.canvas.figure
+            # self._mng = new_figure_manager(1)
+            # self._mng.set_window_title('visig')
+            # self._fig = self._mng.canvas.figure
 
             # using pylab
             # pylab and pyplot seem to be causing mem headaches?
@@ -390,8 +387,8 @@ class SigMap(object):
             # self._mng = pylab.get_current_fig_manager()
 
             # using pyplot
-            # self.fig = plt.figure()
-            # self._mng = plt.get_current_fig_manager()
+            self._fig = plt.figure()
+            self._mng = plt.get_current_fig_manager()
 
             # using oo-api directly
             # self._fig = Figure()
@@ -399,6 +396,7 @@ class SigMap(object):
             # self._mng = new_figure_manager(1, self._fig)
             # self._mng = new_figure_manager_given_figure(1, self._fig)
 
+            self._mng.set_window_title('visig')
         else:
             # for axis in self.figure.get_axes():
             #     axis.clear()
@@ -411,7 +409,7 @@ class SigMap(object):
 
         # draw fig
         # TODO: eventually detect if a figure is currently shown?
-        draw_if_interactive()
+        # draw_if_interactive()
 
         # set window to half screen size if only one signal
         if len(keys) < 2: h = self.h/2
@@ -428,11 +426,12 @@ class SigMap(object):
         # main plot loop
         for icount, key in enumerate(keys):
             # always set 'curr_sig' to last plotted
-            sig = self._cur_sig = self[key]
+            self._cur_sig = key
+            sig = self[key]
             slen  = len(sig)
 
             # set up a time vector and plot
-            t     = np.linspace(start_time, slen / self.fs, num=slen)
+            t     = np.linspace(start_time, slen / self.Fs, num=slen)
             ax    = self._fig.add_subplot(len(keys), 1, icount + 1)
             # maintain a set of current signals present on the active axes
             # self._axes_set.add(sig)
@@ -461,15 +460,16 @@ class SigMap(object):
     def register_callback(self):
         pass
 
+
 class Signal(object):
     '''
-    base class for loading arbitray data files into np arrays
-    normal procedure is to convert to wav using a system util
+    wrapper class for loading arbitray data files into np arrays
+    brute force procedure is first convert to wav using a system util (ex. sox)
     and then load from wav to numpy array
     '''
 
     def __init__(self, file_path):
-        self._fs = None
+        self._Fs = None
         self._signal = None
         self._detect_fmt(file_path)
         pass
@@ -492,7 +492,7 @@ import wave
 def wav_2_np(f):
     ''' use the wave module to make a np array'''
     wf = wave.open(f, 'r')
-    fs = wf.getframerate()
+    Fs = wf.getframerate()
 
     # bit depth calc
     bd = wf.getsampwidth() * 8
@@ -502,12 +502,11 @@ def wav_2_np(f):
     dt = np.dtype('i' + str(wf.getsampwidth()))
     sig = np.fromstring(frames, dtype=dt)
     wf.close()
-    return (sig, fs, bd)
+    return (sig, Fs, bd)
 
 def cursor(axis, time, colour='r'):
     '''add a vertical line @ time (...looks like a cursor)
-    here the x axis should be a time vector
-    such as created in SigMap._plot
+    here the x axis should be a time vector such as created in SigMng._plot
     the returned line 'l' can be set with l.set_data([xmin, xmax], [ymin, ymax])'''
     return axis.axvline(x=time, color=colour)
 
@@ -610,28 +609,101 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEAL
 try: import tempfile, wave, signal, struct, threading, sys#, contextlib
 except ImportError as imperr : print(imperr)
 
-# TODO: make the subclasses
-class SndApp(object):
-    '''
-    base class for sound app wrappers
-    sound app can be a single command or can be a class
-    if app is a command opt_list is it's arguments if a class then it's __init__ args
-    '''
-    def __init__(self, app, opt_list=None, parser=None):
-        # if we get a class
-        if isinstance(app, type):
-            self = app.__init__(opt_list, parser)
-        elif isinstance(app, str):
-            self.cmd_line = []
-            self.cmd_line.append(app)
-            self.cmd_line.extend(opt_list)
+# but Popen uses the alias DEVNULL anyway...? (legacy...damn)
+FNULL = open(os.devnull,'w')
 
+#TODO: consider checking out the nipype 'run_command' routine for more ideas...?
+class ProcessLauncher(object):
+    '''base class for process launchers'''
+
+    def __init__(self, **args):
+        '''passing a callback implies you want to pipe output from the process
+        and the callback '''
+       self._settings = args
+
+    def _launch(self, args, pipe_output=False):
+        '''will be called by 'run' to launch the process
+        reimplement this if don't want to use the Popen class
+        returns : a process object
+        '''
+        # def launch_without_console(args, get_output=False):
+            # """Launches args windowless and waits until finished"""
+        startupinfo = None
+
+        if 'STARTUPINFO' in dir(subprocess):
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
+        # if pipe_output:
+        if self.callback:
+            # create process
+            return subprocess.Popen(args,
+                             # bufsize=1,
+                             stdin=subprocess.PIPE,
+                             stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE,
+                             startupinfo=startupinfo)
+            # return p
+        else:
+            return subprocess.Popen(args,
+                                    stdin=subprocess.PIPE,
+                                    stdout=FNULL,
+                                    # stderr=FNULL,
+                                    startupinfo=startupinfo)
+
+    def run(self, get_output=False):
+        return self._launch(arg_list, get_output)
+
+# TODO: make the subclasses and use class attributes to customize for
+# each util?
+class SndFileApp(object):
+    '''
+    simple class for wrapping sound utils
+    inputs :
+               app           - the arg0 part
+               playback_args - a tokenized in a list of command options which allow for playback
+               fmt_analyser  - also an arg list which can be used to analyse audio files
+
+    You can additionally pass a callable 'parser' which can be used to parse the output
+    from the application's std streams
+    '''
+    def __init__(self, app, playback_args, fmt_analyser=None, launcher=ProcLauncher, parser=None):
+
+        self._cmdline = []
+        self._cmdline.append(app)
+        self.cmd_line.extend(playback_args)
+        self._proc_launcher = launcher()
+        if fmt_analyser:
+            self._fmt_anal = fmt_analyser
         if parser:
             self._parser = parser
+
+    def read(self, f):
+        '''read in a sound file using the sound app utilities'''
+        pass
+
+    def launch(self, callback=None, parser=lambda arg : arg):
+        '''launch the sound app as a subprocess
+        provide command output parsing if a callback is provided'''
+        get_output = lambda : callback is not None
+        prs = self._parser or parser
+        p = self._proc_launcher.run(self._cmdline, get_output())
+        if callback:
+            # create a thread to handle app std stream parsing
+            t = threading.Thread(target=buffer_proc_stream,
+                                 kwargs={'proc': p, 'callback': callback, 'parser' : prs})
+            t.daemon = True  # thread dies with program
+            t.start()
+            self._output_handler = t
+        return p
 
     def analyze(self, f):
         '''sublcass method to analyze a file'''
         raise NotImplementedError("must implement the file analysis in the child class!")
+
+    def sound(self, itr, Fs, **args):
+        '''use sound4python module for playback'''
+        sound4python(itr, Fs, app=self, **args)
 
 # app parser funcs
 def parse_sox_cur_time(s):
@@ -656,18 +728,23 @@ def parse_sndfile(s):
 # - should this class contain a parser plugin mechanism?
 
 snd_utils            = OrderedDict()
-snd_utils['sox']     = SndApp('sox', opt_list=['-','-d'], parser=parse_sox_cur_time)
-snd_utils['aplay']   = SndApp('aplay', opt_list=['-vv', '--'], parser=parse_aplay)
-snd_utils['sndfile'] = SndApp('sndfile-play', opt_list=['-'], parser=parse_sndfile)
+snd_utils['sox']     = SndFileApp('sox', opt_list=['-','-d'], parser=parse_sox_cur_time)
+snd_utils['aplay']   = SndFileApp('aplay', opt_list=['-vv', '--'], parser=parse_aplay)
+snd_utils['sndfile'] = SndFileApp('sndfile-play', opt_list=['-'], parser=parse_sndfile)
 
 def get_snd_app():
     '''get the first available sound app'''
-    pass
+    for k,v in snd_utils.items():
+        if k in os.defpath:
+            return v
+        else:
+            continue
     # for app in snd_utils:
     #     arg0 = app.
 
-def sound4python(itr, fs, bitdepth=16, start=0, stop=None,
-          app_name='sox',
+def sound4python(itr, Fs, bitdepth=16, start=0, stop=None,
+          # app_name='sox',
+          app=None,
           autoscale=True,
           level =-18.0,
           callback=None):
@@ -676,7 +753,7 @@ def sound4python(itr, fs, bitdepth=16, start=0, stop=None,
 
     params:
             itr          : input python iterable for playback
-            fs           : sample rate of data
+            Fs           : sample rate of data
             start/stop   : start/stop vector indices
             app_name     : system app of type SndApp used for playback
                            current available options are sox, alsa play, and lib-sndfile play
@@ -694,12 +771,12 @@ def sound4python(itr, fs, bitdepth=16, start=0, stop=None,
 
     print("playing from", start,"until", stop)
     # set start sample
-    start = start * fs
+    start = start * Fs
     # set stop sample
     if not stop:
         stop = len(itr)
     else:
-        stop = stop * fs
+        stop = stop * Fs
 
     # slicing should work for most itr
     itr = itr[start:stop]
@@ -719,7 +796,7 @@ def sound4python(itr, fs, bitdepth=16, start=0, stop=None,
     waveWrite = wave.open(memFile,'wb')
     waveWrite.setsampwidth(bitdepth/8)  # int16 default
     waveWrite.setnchannels(1)           # mono  default
-    waveWrite.setframerate(fs)
+    waveWrite.setframerate(Fs)
     wroteFrames = False
 
     # utilize appropriate data type
@@ -753,20 +830,24 @@ def sound4python(itr, fs, bitdepth=16, start=0, stop=None,
     # getting here means wroteFrames == True
     print("\nAttempting to play a mono audio stream of length "
           "{0:.2f} seconds\n({1:.3f} thousand samples at sample "
-          "rate of {2:.3f} kHz)".format(1.0*len(itr)/fs, len(itr)/1000., int(fs)/1000.))
+          "rate of {2:.3f} kHz)".format(1.0*len(itr)/Fs, len(itr)/1000., int(fs)/1000.))
     try:
         # look up the cmdline listing
-        app = snd_utils[app_name]
+        # app = snd_utils[app_name]
+        if not app:
+            app = get_snd_app()
 
         # launch the process parsing std streams output if requested
-        p = launch_without_console(app.cmd_line, strm_output=True)
+        p = app.launch(callback)
+        # p = launch_without_console(app.cmd_line, get_output=True)
 
-        if callback:
+        # if callback:
             # create a thread to handle app output stream parsing
             # TODO: make thread a class with more flexibility
-            t = threading.Thread( target=buffer_proc_stream, kwargs={'proc': p, 'callback': callback} ) #, q))
-            t.daemon = True  # thread dies with program
-            t.start()
+            # t = threading.Thread( target=buffer_proc_stream, kwargs={'proc': p, 'callback': callback} ) #, q))
+            # t.daemon = True  # thread dies with program
+            # t.start()
+
             # state.join()
 
     except:
@@ -787,35 +868,9 @@ def sound4python(itr, fs, bitdepth=16, start=0, stop=None,
         print("E: Unable to send in-memory wave file to stdin of sox subprocess.")
         waveWrite.close()
         return None
+
 #os.kill(p.pid,signal.CTRL_C_EVENT)
 #end def sound(itr,samprate=8000,autoscale=True)
-
-# but Popen uses the alias DEVNULL anyway...? (legacy...damn)
-FNULL = open(os.devnull,'w')
-
-def launch_without_console(args, strm_output=False):
-    """Launches args windowless and waits until finished"""
-    startupinfo = None
-
-    if 'STARTUPINFO' in dir(subprocess):
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-
-    if strm_output:
-        # create process
-        p = subprocess.Popen(args,
-                         # bufsize=1,
-                         stdin=subprocess.PIPE,
-                         stdout=subprocess.PIPE,
-                         stderr=subprocess.PIPE,
-                         startupinfo=startupinfo)
-        return p
-    else:
-        return subprocess.Popen(args,
-                                stdin=subprocess.PIPE,
-                                stdout=FNULL,
-                                # stderr=FNULL,
-                                startupinfo=startupinfo)
 
 # # threaded class to hold cursor state info
 # class SoxState(thread.
@@ -897,10 +952,6 @@ def unbuffered(proc, stream='stdout', nbytes=1):
             yield out
             # out.clear()
 
-# select values from an itr by index
-def itr_iselect(itr, *indices):
-    i_set = set(indices)
-    return (e for (i, e) in enumerate(itr) if i in i_set)
 
 def _in_ipython():
     try:
@@ -924,13 +975,73 @@ def ipy():
 # TODO: should try out pyunit here..
 def test():
     # example how to use the lazy plotter
-    ss = SigMap()
+    ss = SigMng()
     ss.find_wavs('/home/tyler/code/python/wavs/')
     # wp.plot(0)
     return ss
 
+# First set up the figure, the axis, and the plot element we want to animate
+# fig = plt.figure()
+# ax = plt.axes(xlim=(0, 2), ylim=(-2, 2))
+# line, = ax.plot([], [], lw=2)
+
+ss = SigMng()
+ss.find_wavs('/home/tyler/code/python/wavs/')
+a = ss.plot(0)
+cur = cursor(a, 0)
+# line = ax.get_line
+
+# initialization function: plot the background of each frame
+def init():
+    l = a.get_axes()
+    # line.set_data([0,1,4], [1,4,6])
+    return l,
+
+# animation function.  This is called sequentially
+def animate(i):
+    x = np.linspace(0, 2, 1000)
+    y = np.sin(2 * np.pi * (x - 0.01 * i))
+    line.set_data(x, y)
+    print(i)
+    return line,
+
+import time
+def _set_cursor(itime, *fargs):
+    '''
+    perform animation step using the frame number and cursor line
+    cursor artist must be first element in *fargs
+    '''
+# TODO? place a lock here?
+    # print(fargs)
+    print(itime)
+    # print(str(time.time()))
+    # print(fargs)
+    for f in fargs:
+        cursor_line = f
+        cursor_line.set_xdata(float(itime))
+    return cursor_line,
+    # self._cursor.set_data(float(sample_time), [0,1])
+    # self.figure.show()
+    # return self._cursor
+
+_fps = 20
+_Fs  = 48000
+def icounter():
+    # frame_step = self.Fs / self._fps    # samples/frame
+    time_step = 1/_fps
+    _audio_time = 0                # this can be locked out?
+                                   # FIXME: get rid of this hack job!
+    total_time = len(ss[0])/_Fs
+    while _audio_time <= total_time:
+        yield _audio_time
+        _audio_time += time_step
+
+# call the animator. blit=True means only re-draw the parts that have changed.
+anim = animation.FuncAnimation(ss.figure, _set_cursor, init_func=init, fargs=[cur],
+                               frames=icounter, interval=1000/_fps, blit=True)
+
 # script interface
 if __name__ == '__main__':
-    ss = test()
+    # ss = test()
     print("play with instance 'ss'\ne.g. ss.show_corpus...")
     shell = ipy()
