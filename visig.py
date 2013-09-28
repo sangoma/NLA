@@ -8,7 +8,6 @@ website : http://tgoodlet.github.com
 license : BSD
 Please feel free to use and modify this, but keep the above information.
 '''
-
 # TODO;
 # - consider using sox conversion in this module so we can open
 #   arbitrarly formatted audio files as numpy arrays
@@ -27,8 +26,10 @@ import numpy as np
 # mpl
 # import matplotlib
 # matplotlib.use('Qt4Agg')
-# from matplotlib.figure import Figure
-# from matplotlib.backends.backend_qt4 import FigureManagerQT as FigureCanvas
+from matplotlib.figure import Figure
+from matplotlib.artist import getp
+from matplotlib.backends.backend_qt4 import FigureManager, FigureCanvasQT, \
+     new_figure_manager_given_figure
 # from matplotlib.backends.backend_qt4 import new_figure_manager_given_figure
 # from matplotlib.backends import pylab_setup
 # _backend_mod, new_figure_manager, draw_if_interactive, _show = pylab_setup()
@@ -38,63 +39,10 @@ import matplotlib.pyplot as plt
 # from matplotlib import pylab
 
 #from scipy.io import wavfile
-# from scipy import signal
-# from scipy import fftpack
 import subprocess, os, gc
-from collections import OrderedDict, deque
 
-# select values from an itr by index
-def itr_iselect(itr, *indices):
-    i_set = set(indices)
-    return (e for (i, e) in enumerate(itr) if i in i_set)
-
-# like it sounds : an ordered, int subscriptable dict (OID)
-class OrderedIndexedDict(OrderedDict):
-    def __getitem__(self, key):
-        #FIXME: how to handle slices?
-        #(it's weird since we always have to check first and using the list...)
-        if isinstance(key, slice ):
-            print("you've passed a slice! with start",key.start,"and stop",key.stop)
-            return list(self.values())[key]
-
-        # if it's already mapped get the value
-        elif key in self:
-            return OrderedDict.__getitem__(self, key)
-
-        # FIXME: is this the fastest way to implement this?
-        # if it's an int, iterate the linked list and return the value
-        elif isinstance(key, int):
-            return self[self._get_key(key)]
-            # return self._setget_value(key)
-
-    def __setitem__(self, key, value):
-        # don't give me ints bitch...(unless you're changing a value)
-        if isinstance(key, int):# raise KeyError("key can not be of type integer")
-            key = self._get_key(key)
-        OrderedDict.__setitem__(self, key, value)
-
-    def _get_key(self, key):
-        ''' get the key for a given index'''
-        # check for out of bounds
-        l = len(self)
-        if l - 1 < key or key < -l :
-            raise IndexError("index out of range, len is " + str(l))
-
-        # get the root of the doubly linked list (see the OrderedDict implemenation)
-        root = self._OrderedDict__root
-        curr = root.next
-        act = lambda link : link.next
-
-        # handle -ve indices too
-        if key < 0 :
-            key += 1
-            curr = root.prev
-            act = lambda link : link.prev
-        # traverse the linked list for our element
-        for i in range(abs(key)):
-            curr = act(curr)
-        # return the key
-        return curr.key
+# visig libs
+from utils import Lict, print_table
 
 class SigMng(object):
     '''
@@ -105,34 +53,36 @@ class SigMng(object):
     Use this class interactively (IPython) as well as programatically
     '''
     def __init__(self, *args):
-        self._signals = OrderedIndexedDict() # what's underneath...
+        self._signals = Lict() # what's underneath...
         # unpack any file names that might have been passed initially
         if args:
             for i in args:
                 self._sig[i] = None
 
         # mpl stateful objs
-        # self._lines  = []
-        self._fig      = None
-        self._mng      = None
-        self._cur_sig  = None
-        self._axes_set = set()
+        # self._lines    = []
+        self._fig        = None
+        self._mng        = None
+        self._cur_sig    = None
+        self._axes_cache = Lict()
+        self._arts       = []
 
         # to be updated by external thread
         self._cur_sample = 0
         self._cur_sig   = None
 
         # animation state
-        self._provision_anim = lambda : None
-        self._anim_func      = None
-        self._frames_gen     = None
-        self._anim_fargs     = None
-        self._anim_sig_set   = set()
-        self._time_elapsed   = 0
-        self._cursor         = None
+        # self._provision_anim = lambda : None
+        # self._anim_func      = None
+        self._frames_gen       = None
+        # self._anim_fargs     = None
+        # self._anim_sig_set   = set()
+        # self._time_elapsed   = 0
+        self._realtime_artists = []
+        self._cursor           = None
 
         # animation settings
-        self._fps = 5   # determines the resolution for animated metrics (i.e. window size)
+        self._fps = 15   # determines the resolution for animated features (i.e. window size)
 
         # FIXME: make scr_dim impl more pythonic!
         self.w, self.h = scr_dim()
@@ -183,6 +133,11 @@ class SigMng(object):
                 raise Exception("Failed to load wave file!\nEnsure that the wave file exists and is in LPCM format")
         else: raise KeyError("no entry in the signal set for key '"+str(path)+"'")
 
+    def _prettify(self):
+        '''pretty the figure in sensible ways'''
+        # tighten up the margins
+        self._fig.tight_layout(pad=1.03)
+
     def _sig2axis(self, sig_key=None):
         '''return rendered axis corresponding to a signal'''
         #FIXME: in Signal class we should assign the axes
@@ -191,7 +146,7 @@ class SigMng(object):
         # if not sig_key: sig_key = self._cur_sig
         sig = self[sig_key]
         try:
-            for ax in self.figure.get_axes():
+            for ax in self._axes_cache.values():
                 for line in ax.get_lines():
                     if sig in line.get_ydata():# continue
                         return ax
@@ -203,49 +158,46 @@ class SigMng(object):
         # else:
         #     return self._sig2axis(self._cur_sig)
 
-    def _prettify(self):
-        '''pretty the figure in sensible ways'''
-        # tighten up the margins
-        self._fig.tight_layout(pad=1.03)
+    getp = lambda key : getp(self._axes_cache[key])
 
     def _init_anim(self):
         '''
         in general we provision as follows:
         1) check if the 'current signal(s)' (_cur_signal) is shown on a figure axis
         2) if not (re-)plot them
-        3) return the basline artists which won't change after plotting (usually time and amplitude)
+        3) return the baseline artists which won't change after plotting (usually the time series)
         '''
         # axes = [self._sig2axis(key) for key in self._anim_sig_set]
         # ax = self._sig2axis(self._cur_sig)
         #4) do addional steps using self._provision_anim
         # self._provision_anim()
         # return the artists which won't change during animation (blitting)
-        y = [axes.get_lines() for axes in self._fig.get_axes()]
+        y = tuple(axes for axes in self._fig.get_axes())
         print(y[0])
-        return y[0],
+        return y
         # return ax.get_lines()
         # line = vline(axis, time, colour=green)
 
     def _do_fanim(self):
-        '''run the function based animation once
-        this blocks until the the animation is complete when using an interactive fe'''
+        '''run the function based animation once'''
         # if self._anim_func:
         anim = animation.FuncAnimation(self._fig,
                                        _set_cursor,
-                                       frames=6000, #self._audio_time_gen,
-                                       # init_func=self._init_anim,
-                                       interval=20,#1//self._fps*1000,
-                                       fargs=self,
-                                       blit=True)
-                                       #repeat=False)
+                                       frames=itime,#self._audio_time_gen,
+                                       init_func=self._init_anim,
+                                       interval=1000/self._fps,
+                                       fargs=self._arts,
+                                       blit=True,
+                                       repeat=False)
 
+        return anim
             # self._animations.appendleft(anim)
         # else: raise RuntimeError("no animation function has been set!")
 
     def sound(self, key, **kwargs):
         '''JUST play sound'''
         sig = self[key]
-        sound4python(sig, sig.Fs, **kwargs)
+        sound4python(sig, 8e8, **kwargs)
 
     def play(self, key):
         '''play sound + do mpl animation with a playback cursor'''
@@ -254,11 +206,13 @@ class SigMng(object):
         ax = self._sig2axis(key)
         if not ax:
             ax = self.plot(key)
-        self._cursor = cursor(ax, 0)
+
+        self._arts.append(anim_action(cursor(ax, 0), action=Line2D.set_xdata))
+        self._cursor = cursor(ax, 10)
         # set animator routine
         # self._anim_func = self._set_cursor
         # set the frame iterator
-        self._frames_gen = self._audio_time_gen
+        self._frames_gen = itime()
 
         # t = threading.Thread( target=buffer_proc_stream, kwargs={'proc': p, 'callback': callback} ) #, q))
         # t.daemon = True  # thread dies with program
@@ -280,6 +234,7 @@ class SigMng(object):
 
     def _show_corpus(self):
         '''pretty print the internal path list'''
+        # TODO: show the vectors in the last column
         try: print_table(map(os.path.basename, self._signals.keys()))
         except: raise ValueError("no signal entries exist yet!?...add some first")
 
@@ -392,8 +347,9 @@ class SigMng(object):
 
             # using oo-api directly
             # self._fig = Figure()
-            # self._canvas = FigureCanvas(self._fig)
-            # self._mng = new_figure_manager(1, self._fig)
+            # self._canvas = FigureCanvasQT(self._fig)
+            # self._mng = new_figure_manager_given_figure(self._fig, 1)
+            # self._mng = FigureManager(self._canvas, 1)
             # self._mng = new_figure_manager_given_figure(1, self._fig)
 
             self._mng.set_window_title('visig')
@@ -423,6 +379,7 @@ class SigMng(object):
         # title settings
         font_style = {'size' : 'small'}
 
+        self._axes_cache.clear()
         # main plot loop
         for icount, key in enumerate(keys):
             # always set 'curr_sig' to last plotted
@@ -433,8 +390,10 @@ class SigMng(object):
             # set up a time vector and plot
             t     = np.linspace(start_time, slen / self.Fs, num=slen)
             ax    = self._fig.add_subplot(len(keys), 1, icount + 1)
-            # maintain a set of current signals present on the active axes
-            # self._axes_set.add(sig)
+
+            # maintain the key map to our figure's axes
+            self._axes_cache[key] = ax
+
             lines = ax.plot(t, sig, figure=self._fig)
             ax.set_xlabel('Time (s)', fontdict=font_style)
 
@@ -442,6 +401,7 @@ class SigMng(object):
             ax.set_title(title, fontdict=font_style)
 
             # ax.figure.canvas.draw()
+            ax.figure.canvas.draw()
             yield (ax, lines)
 
     def find_wavs(self, sdir):
@@ -461,33 +421,44 @@ class SigMng(object):
         pass
 
 
-class Signal(object):
+class Signal(np.ndarray):
     '''
+    extend the standard ndarray to include metadata about the contained vector
+    such as the sample rate 'Fs' and maintain an artist which refers to the data directly
+    instead of making a copy as with mpl's ax.plot(t, array)...
+
     wrapper class for loading arbitray data files into np arrays
     brute force procedure is first convert to wav using a system util (ex. sox)
     and then load from wav to numpy array
     '''
-
-    def __init__(self, file_path):
+    def __init__(self, array=None, data_file=None, artist_cls=Line2D):
         self._Fs = None
-        self._signal = None
-        self._detect_fmt(file_path)
-        pass
+        self.artist = artist_cls#(np.arange(len(self), ydata=self)
+        # self._detect_fmt(file_path)
+
+    artist = property(lambda self: self._fill_artist(np.arange(self), self))
 
     def _load_sig(self, path):
-        pass
+        try:
+            print("loading wave file : ",os.path.basename(path))
+            # read audio data and params
+            sig, self.Fs, self.bd = wav_2_np(path)
+            # (self.Fs, sig) = wavfile.read(self.flist[index])
 
-    def __getattr__(self):
-        return getattr(self._signal, attr)
+            amax = 2**(self.bd - 1) - 1
+            sig = sig/amax
+            self._signals[path] = sig
+            print("INFO |->",len(sig),"samples =",len(sig)/self.Fs,"seconds @ ",self.Fs," Hz")
+            return path
+        except:
+            raise Exception("Failed to load wave file!\nEnsure that the wave file exists and is in LPCM format")
+
+    def __getattr__(self, attr):
+        return getattr(self._array, attr)
 
     def _detect_fmt(selft):
         raise NotImplementedError('Needs to be implemented by subclasses to'
                                   ' actually detect file format.')
-
-    def _load_sig(self):
-        raise NotImplementedError('Needs to be implemented by subclasses to'
-                                  ' actually load a signal.')
-
 import wave
 def wav_2_np(f):
     ''' use the wave module to make a np array'''
@@ -510,52 +481,6 @@ def cursor(axis, time, colour='r'):
     the returned line 'l' can be set with l.set_data([xmin, xmax], [ymin, ymax])'''
     return axis.axvline(x=time, color=colour)
 
-def label_ymax(axis, label):
-    '''add an optional label to the line @ ymax'''
-    # use ylim for annotation placement
-    mx = max(axis.get_ylim())
-    ret = axis.annotate(label,
-                  xy=(time, mx),
-                  xycoords='data',
-                  xytext=(3, -10),
-                  textcoords='offset points')
-                  # arrowprops=dict(facecolor='black', shrink=0.05),
-                  # horizontalalignment='right', verticalalignment='bottom')
-    return ret
-
-def lines_max_y(axis):
-    # use max value from the available lines for annotation placement
-    lines = axis.get_lines()
-    mx = 0
-    for line in lines:
-        lm = max(line.get_ydata())
-        if lm > mx:
-            mx = lm
-    return mx
-
-def print_table(itr, field_header=['signal files'], delim='|'):
-    '''pretty print iterable in a column'''
-    itr = [i for i in itr]
-    max_width = max(len(field) for field in itr)
-    widths = iter(lambda:max_width, 1) # an infinite width generator
-
-    # print field title/headers
-    print('')
-    print('index', delim, '',  end='')
-    for f, w in zip(field_header, widths):
-        print('{field:<{width}}'.format(field=f, width=w), delim, '', end='')
-    print('\n')
-
-    # print rows
-    for row_index, row in enumerate(itr):
-        # print index
-        print('{0:5}'.format(str(row_index)), delim, '', end='')
-        print('{r:<{width}}'.format(r=row, width=max_width), delim, '', end='')
-        print()
-        # # print columns
-        # for col, w in zip(row, widths):
-        #     print('{column:<{width}}'.format(column=col, width=w), delim, '', end='')
-        # print()
 
 def file_scan(re_literal, search_dir, method='find'):
     if method == 'find':
@@ -574,7 +499,7 @@ def file_scan(re_literal, search_dir, method='find'):
         #TODO: os.walk method
         print("this should normally do an os.walk")
     else:
-        print("no other logs scanning method currentlyl exists!")
+        print("no other logs scanning method currently exists!")
 
 def scr_dim():
     #TODO: find a more elegant way of doing this...say using
@@ -584,7 +509,6 @@ def scr_dim():
     bres = subprocess.check_output([dn + "/screen_size.sh"])
     dims = bres.decode().strip('\n').split('x')  # left associative
     return tuple([int(i.strip()) for i in dims if i != ''])
-
 
 # from the sound4python module
 '''
@@ -613,46 +537,47 @@ except ImportError as imperr : print(imperr)
 FNULL = open(os.devnull,'w')
 
 #TODO: consider checking out the nipype 'run_command' routine for more ideas...?
-class ProcessLauncher(object):
-    '''base class for process launchers'''
+# class ProcessLauncher(object):
+#     '''base class for process launchers'''
 
-    def __init__(self, **args):
-        '''passing a callback implies you want to pipe output from the process
-        and the callback '''
-       self._settings = args
+#     def __init__(self, **args):
+#         '''passing a callback implies you want to pipe output from the process
+#         and the callback '''
+#         self._settings = args
 
-    def _launch(self, args, pipe_output=False):
-        '''will be called by 'run' to launch the process
-        reimplement this if don't want to use the Popen class
-        returns : a process object
-        '''
-        # def launch_without_console(args, get_output=False):
-            # """Launches args windowless and waits until finished"""
-        startupinfo = None
+def launch_without_console(args, pipe_output=False):
+    '''Launches args windowless and waits until finished
+    Reimplement this if don't want to use the Popen class
+    parameters : 'args' list of cmdline tokens, pipe_output toggle
+    outputs : process instance
+    '''
+    # def launch_without_console(args, get_output=False):
+        # """Launches args windowless and waits until finished"""
+    startupinfo = None
 
-        if 'STARTUPINFO' in dir(subprocess):
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    if 'STARTUPINFO' in dir(subprocess):
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
 
-        # if pipe_output:
-        if self.callback:
-            # create process
-            return subprocess.Popen(args,
-                             # bufsize=1,
-                             stdin=subprocess.PIPE,
-                             stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE,
-                             startupinfo=startupinfo)
-            # return p
-        else:
-            return subprocess.Popen(args,
-                                    stdin=subprocess.PIPE,
-                                    stdout=FNULL,
-                                    # stderr=FNULL,
-                                    startupinfo=startupinfo)
+    # if pipe_output:
+    if self.callback:
+        # create process
+        return subprocess.Popen(args,
+                         # bufsize=1,
+                         stdin=subprocess.PIPE,
+                         stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE,
+                         startupinfo=startupinfo)
+        # return p
+    else:
+        return subprocess.Popen(args,
+                                stdin=subprocess.PIPE,
+                                stdout=FNULL,
+                                # stderr=FNULL,
+                                startupinfo=startupinfo)
 
-    def run(self, get_output=False):
-        return self._launch(arg_list, get_output)
+    # def run(self, get_output=False):
+    #     return self._launch(arg_list, get_output)
 
 # TODO: make the subclasses and use class attributes to customize for
 # each util?
@@ -667,12 +592,16 @@ class SndFileApp(object):
     You can additionally pass a callable 'parser' which can be used to parse the output
     from the application's std streams
     '''
-    def __init__(self, app, playback_args, fmt_analyser=None, launcher=ProcLauncher, parser=None):
+    _cmd = 'sox'
+    _playback_args = []
+    def __init__(self, app, playback_args, fmt_analyser=None,
+                launcher=launch_without_console,
+                parser=None):
 
         self._cmdline = []
         self._cmdline.append(app)
-        self.cmd_line.extend(playback_args)
-        self._proc_launcher = launcher()
+        self._cmdline.extend(playback_args)
+        self._proc_launcher = launcher
         if fmt_analyser:
             self._fmt_anal = fmt_analyser
         if parser:
@@ -687,7 +616,7 @@ class SndFileApp(object):
         provide command output parsing if a callback is provided'''
         get_output = lambda : callback is not None
         prs = self._parser or parser
-        p = self._proc_launcher.run(self._cmdline, get_output())
+        p = self._proc_launcher(self._cmdline, get_output())
         if callback:
             # create a thread to handle app std stream parsing
             t = threading.Thread(target=buffer_proc_stream,
@@ -713,10 +642,9 @@ def parse_sox_cur_time(s):
     '''
     val = s.strip('\n')
     return val
-
+#TODO
 def parse_aplay(s):
     pass
-
 def parse_sndfile(s):
     pass
 
@@ -724,13 +652,13 @@ def parse_sndfile(s):
 # TODO:
 # - check for app existence in order
 # - extend the SndApp class to contain method calls for generic analysis
-#   and multichannel playback (multiprocessing module?)
+#   and multichannel playback (sox supports this)
 # - should this class contain a parser plugin mechanism?
 
-snd_utils            = OrderedDict()
-snd_utils['sox']     = SndFileApp('sox', opt_list=['-','-d'], parser=parse_sox_cur_time)
-snd_utils['aplay']   = SndFileApp('aplay', opt_list=['-vv', '--'], parser=parse_aplay)
-snd_utils['sndfile'] = SndFileApp('sndfile-play', opt_list=['-'], parser=parse_sndfile)
+snd_utils            = Lict()
+snd_utils['sox']     = SndFileApp('sox', playback_args=['-','-d'], parser=parse_sox_cur_time)
+snd_utils['aplay']   = SndFileApp('aplay', playback_args=['-vv', '--'], parser=parse_aplay)
+snd_utils['sndfile'] = SndFileApp('sndfile-play', playback_args=['-'], parser=parse_sndfile)
 
 def get_snd_app():
     '''get the first available sound app'''
@@ -758,7 +686,7 @@ def sound4python(itr, Fs, bitdepth=16, start=0, stop=None,
             app_name     : system app of type SndApp used for playback
                            current available options are sox, alsa play, and lib-sndfile play
             autoscale    : indicates to enable playback at the provided 'level'
-            level        : volume in dBFS
+            level        : volume in dBFS (using an rms calc?)
             callback     : will be called by the snd app with (parser) output passing in 'fargs'
     '''
 # TODO: move these imports out of here?
@@ -794,7 +722,7 @@ def sound4python(itr, Fs, bitdepth=16, start=0, stop=None,
 
     # create wave write objection pointing to memFile
     waveWrite = wave.open(memFile,'wb')
-    waveWrite.setsampwidth(bitdepth/8)  # int16 default
+    waveWrite.setsampwidth(int(bitdepth/8))  # int16 default
     waveWrite.setnchannels(1)           # mono  default
     waveWrite.setframerate(Fs)
     wroteFrames = False
@@ -803,7 +731,7 @@ def sound4python(itr, Fs, bitdepth=16, start=0, stop=None,
     dt = np.dtype('i' + str(bitdepth))
     # try to create sound from NumPy vector
     if foundNumpy:
-        if type(itr) == np.array:
+        if type(itr) == np.ndarray:
             if itr.ndim == 1 or itr.shape.count(1) == itr.ndim - 1:
                 waveWrite.writeframes( (mult*itr.flatten()).astype(dt).tostring() )
                 wroteFrames=True
@@ -830,7 +758,7 @@ def sound4python(itr, Fs, bitdepth=16, start=0, stop=None,
     # getting here means wroteFrames == True
     print("\nAttempting to play a mono audio stream of length "
           "{0:.2f} seconds\n({1:.3f} thousand samples at sample "
-          "rate of {2:.3f} kHz)".format(1.0*len(itr)/Fs, len(itr)/1000., int(fs)/1000.))
+          "rate of {2:.3f} kHz)".format(1.0*len(itr)/Fs, len(itr)/1000., int(Fs)/1000.))
     try:
         # look up the cmdline listing
         # app = snd_utils[app_name]
@@ -952,7 +880,6 @@ def unbuffered(proc, stream='stdout', nbytes=1):
             yield out
             # out.clear()
 
-
 def _in_ipython():
     try:
         __IPYTHON__
@@ -980,22 +907,84 @@ def test():
     # wp.plot(0)
     return ss
 
-# First set up the figure, the axis, and the plot element we want to animate
-# fig = plt.figure()
-# ax = plt.axes(xlim=(0, 2), ylim=(-2, 2))
-# line, = ax.plot([], [], lw=2)
+from matplotlib.lines import Line2D
 
-ss = SigMng()
-ss.find_wavs('/home/tyler/code/python/wavs/')
-a = ss.plot(0)
-cur = cursor(a, 0)
+def anim_action(artist, data=None, action=Line2D.set_data):
+    if data:
+        return lambda iframe, data : artist.action(iframe, data)
+
+class Animatee(object):
+    '''
+    container which provides a standard interface to
+    animate artists under a sequened timing
+    '''
+    def __init__(self,  data, artist=Line2D, action=None):
+        self.data = data
+        self.artist = artist
+
+    def animate(self, iframe, data):
+        '''this can be overidden'''
+        self.artist.set_ydata(data)
+
+# def _set_cursor(iframe, *rt_anims):
+def animate_with_data(ift, *rt_anims):
+    '''
+    perform animation step using the frame sequence value and cursor line
+    cursor artist must be first element in *fargs
+    '''
+# TODO? place a lock here?
+    # print(fargs)
+    # print(iframe)
+    # print(str(time.time()))
+    # print(fargs)
+    # for array,line in fargs:
+    #   line.set_ydata(array)
+    # TODO: can we do a map using the Animatee 'animate' function?
+    for animatee in rt_anims:
+        animatee.animate(ift)#, animatee.data)
+    return rt_anims
+        # cursor_line = f
+        # cursor_line.set_xdata(float(iframe))
+    # self._cursor.set_data(float(sample_time), [0,1])
+    # self.figure.show()
+    # return self._cursor
+
+import time
+_fps = 15
+_Fs  = 48000
+def get_ift_gen(fps, length, Fs, init=0):
+    sample_step = Fs / fps    # samples/frame
+    time_step = 1/fps        # seconds
+    total_time = length / Fs
+        # init_val = 0                # this can be locked out?
+        # _audio_time = 0                # this can be locked out?
+                                       # FIXME: get rid of this hack job!
+    now = time.time()
+    itime = isample = init
+    # total_time = len(ss[0])/_Fs
+    while itime <= total_time:
+        yield isample, itime
+        itime += time_step
+        isample += sample_step
+    later = time.time()
+    print("total time to animate = "+str(later-now))
+
+
+# return axes rendering the signal
+# ss = SigMng()
+# ss.find_wavs('/home/tyler/code/python/wavs/')
+# a = ss.plot(0)
+# cursor line added to axis, line artist returned
+# lcur = cursor(a, 0)
 # line = ax.get_line
 
-# initialization function: plot the background of each frame
-def init():
-    l = a.get_axes()
-    # line.set_data([0,1,4], [1,4,6])
-    return l,
+def test_fanim(ss):
+# call the animator. blit=True means only re-draw the parts that have changed.
+    anim = animation.FuncAnimation(ss.figure, _set_cursor, init_func=init, fargs=[lcur],
+                                   frames=itime, interval=1000/_fps, repeat=False, blit=True)
+
+    return anim
+    # return None
 
 # animation function.  This is called sequentially
 def animate(i):
@@ -1005,43 +994,18 @@ def animate(i):
     print(i)
     return line,
 
-import time
-def _set_cursor(itime, *fargs):
-    '''
-    perform animation step using the frame number and cursor line
-    cursor artist must be first element in *fargs
-    '''
-# TODO? place a lock here?
-    # print(fargs)
-    print(itime)
-    # print(str(time.time()))
-    # print(fargs)
-    for f in fargs:
-        cursor_line = f
-        cursor_line.set_xdata(float(itime))
-    return cursor_line,
-    # self._cursor.set_data(float(sample_time), [0,1])
-    # self.figure.show()
-    # return self._cursor
+# initialization function: plot the background of each frame
+def init():
+    l = a.get_axes()
+    # line.set_data([0,1,4], [1,4,6])
+    return l,
 
-_fps = 20
-_Fs  = 48000
-def icounter():
-    # frame_step = self.Fs / self._fps    # samples/frame
-    time_step = 1/_fps
-    _audio_time = 0                # this can be locked out?
-                                   # FIXME: get rid of this hack job!
-    total_time = len(ss[0])/_Fs
-    while _audio_time <= total_time:
-        yield _audio_time
-        _audio_time += time_step
-
-# call the animator. blit=True means only re-draw the parts that have changed.
-anim = animation.FuncAnimation(ss.figure, _set_cursor, init_func=init, fargs=[cur],
-                               frames=icounter, interval=1000/_fps, blit=True)
+# FEATURES:
+# define the plotting routine in the metric? for example use stem instead of plot?
 
 # script interface
 if __name__ == '__main__':
     # ss = test()
     print("play with instance 'ss'\ne.g. ss.show_corpus...")
     shell = ipy()
+    # anim = test_fanim(ss)
