@@ -15,11 +15,11 @@
 # - play audio files and animate
 # DONE - create a seperate class CallLogs package
 # DONE - os.walk instead of 'find' utility
+# - change the underlying data stuctures from being a dict list pair to being a lict?
 
 import itertools
 import visig
 import AEParse
-import sound
 # import numpy as np
 # import matplotlib
 
@@ -164,7 +164,7 @@ class CallSet(object):
         write_package()
 
     def from_txt(self, f):
-        '''generate a subset determined by the cids in the provided text file and attach the set to the 
+        '''generate a subset determined by the cids in the provided text file and attach the set to the
         current callset instance'''
         pass
 
@@ -172,17 +172,16 @@ class CallSet(object):
     def find(self, string):
         pass
 
-    def filter(self, field, filter_f, value):
-        # subset = self.factory.subset(self, 
+    def get_subset(self, field, filter_f, value):
+        # subset = self.factory.subset(self,
         pass
 
     def range_plot(self, start, stop):
         '''plot range of calls from start to stop index'''
         self.plot(range(start, stop + 1))
 
-    # TODO: pass kwargs automatically to sound.sound?  can you do this in python???
-    def playback(self, index, start_t=0, stop_t=None, from_connect=False):
-        ''' play entire wav file from beginning to end for call at index'''
+    def playback(self, index, from_connect=False, **kwargs):
+        '''play entire wav file from beginning to end for call at index'''
         # obtain cid
         cid = self.entry(index)[self._cid_index]
         # grab call log obj
@@ -190,20 +189,28 @@ class CallSet(object):
         if cl.wav:
             if cl.wav not in self.sig_set:
                 self.sig_set.add(cl.wav)
-            if from_connect:
-                start_t=cl.audio_connect_time
 
-            # TODO: need to introduce the signal obj to visig...
+            # if kwargs.get('from_connect'):
+            if from_connect:
+                # kwargs.pop('from_connect')
+                if cl.audio_connect_time < 0:
+                    print("Warning: Audio time is after the connect event.\n"
+                          "Playback will start from the beginning of file!\n")
+                    # kwargs['start'] = 0
+                else:
+                    kwargs['start']=cl.audio_connect_time
+
+            # TODO: need to introduce the signal obj to visig...patch here
             # play the signal
-            sound.sound(self.sig_set.vector(cl.wav), 8e3, start=start_t, stop=stop_t)
+            visig.sound4python(self.sig_set.vector(cl.wav), 8e3, **kwargs)
         else:
             print("WARNING : no wave files were found for index",index,"- cid",cid)
             print("no playback available...")
 
     # TODO: a better name for this guy?
-    def connect_playback(self, index, stop_t=None):
+    def playback_connect(self, index, stop_t=None):
         '''convenience method to playback only from the 200 OK'''
-        self.playback(index, stop_t=stop_t, from_connect=True)
+        self.playback(index, stop=stop_t, from_connect=True)
 
     def plot(self, *args):
         '''plot call recordings by index'''
